@@ -1,5 +1,47 @@
 # DailyQuipAI Development Guidelines
 
+## 🚨 CRITICAL SECURITY RULE - API KEY PROTECTION
+
+### ⚠️ NEVER UPLOAD GEMINI API KEY TO GITHUB - EVER!!!
+
+**ABSOLUTE PROHIBITION:**
+- ❌ **NEVER** commit API keys to any file tracked by git
+- ❌ **NEVER** include API keys in .swift files
+- ❌ **NEVER** include API keys in .xcscheme files
+- ❌ **NEVER** include API keys in .md documentation files
+- ❌ **NEVER** include API keys in any file that goes to GitHub
+
+**API Key Storage Rules:**
+- ✅ API keys ONLY in `.env` file (local, in .gitignore)
+- ✅ API keys ONLY in environment variables (runtime)
+- ✅ ALWAYS verify `.env` is in `.gitignore`
+- ✅ ALWAYS check `git diff` before commit for any "AIzaSy" strings
+
+**Pre-Commit Checklist:**
+```bash
+# 1. Search for API keys in staged files
+git diff --cached | grep -i "AIzaSy" && echo "⚠️ API KEY FOUND!" || echo "✅ Safe"
+
+# 2. Verify .env is ignored
+git status | grep ".env" && echo "⚠️ .env is tracked!" || echo "✅ Safe"
+
+# 3. Check xcscheme files have empty API key field
+grep -r "AIzaSy" *.xcscheme && echo "⚠️ API KEY in xcscheme!" || echo "✅ Safe"
+```
+
+**If API Key is Accidentally Committed:**
+1. Immediately revoke the exposed key in Google Cloud Console
+2. Create a new API key
+3. Update local `.env` file with new key
+4. `git reset --soft HEAD~1` to undo commit
+5. Remove key from files
+6. Recommit without key
+7. `git push --force` to overwrite GitHub history
+
+**REMEMBER: Once an API key touches GitHub, consider it compromised forever!**
+
+---
+
 ## Target Market & Localization
 
 ### Primary Target Audience
