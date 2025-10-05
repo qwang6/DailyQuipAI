@@ -44,6 +44,7 @@ struct DailyCardsView: View {
             // Category filter
             CategoryFilterBar(
                 selectedCategory: viewModel.selectedCategory,
+                currentCardCategory: viewModel.currentCard?.category,
                 onSelectCategory: { category in
                     Task {
                         await viewModel.switchCategory(category)
@@ -55,8 +56,11 @@ struct DailyCardsView: View {
             // Content - using GeometryReader to properly size the card area
             GeometryReader { geometry in
                 if viewModel.isLoading {
-                    LoadingView(message: "Loading today's cards...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    LoadingView(
+                        withRotatingTips: true,
+                        llmGenerator: viewModel.llmGeneratorInstance
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.showError, let error = viewModel.error {
                     ErrorView(error: error) {
                         Task {
@@ -178,6 +182,7 @@ struct DailyCardsView: View {
 
 struct CategoryFilterBar: View {
     let selectedCategory: Category?
+    let currentCardCategory: Category?
     let onSelectCategory: (Category?) -> Void
 
     var body: some View {
@@ -189,12 +194,25 @@ struct CategoryFilterBar: View {
                         title: category.rawValue,
                         icon: category.icon,
                         category: category,
-                        isSelected: selectedCategory == category,
+                        isSelected: isHighlighted(category),
                         action: { onSelectCategory(category) }
                     )
                 }
             }
             .padding(.horizontal)
+        }
+    }
+
+    /// Determine if a category should be highlighted
+    /// - If user selected a specific category, highlight that one
+    /// - If user is viewing "All", highlight the current card's category
+    private func isHighlighted(_ category: Category) -> Bool {
+        if let selected = selectedCategory {
+            // User explicitly selected a category
+            return selected == category
+        } else {
+            // Viewing "All" - highlight current card's category
+            return currentCardCategory == category
         }
     }
 }

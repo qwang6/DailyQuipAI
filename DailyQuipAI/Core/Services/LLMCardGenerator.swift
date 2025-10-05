@@ -20,14 +20,17 @@ class LLMCardGenerator {
     private let apiKey: String
     private let provider: LLMProvider
     private let session: URLSession
+    private let modelName: String
 
     /// Initialize with API configuration
     /// - Parameters:
     ///   - apiKey: API key for LLM service
     ///   - provider: LLM provider to use
-    init(apiKey: String, provider: LLMProvider = .gemini) {
+    ///   - modelName: Model name to use (defaults to gemini-2.5-flash)
+    init(apiKey: String, provider: LLMProvider = .gemini, modelName: String = "gemini-2.5-flash") {
         self.apiKey = apiKey
         self.provider = provider
+        self.modelName = modelName
         self.session = URLSession.shared
     }
 
@@ -137,7 +140,7 @@ class LLMCardGenerator {
 
     /// Call Google Gemini API
     private func callGeminiAPI(prompt: String) async throws -> String {
-        let model = "gemini-2.5-flash"
+        let model = self.modelName
         let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)"
 
         print("🚀 Calling Gemini API with model: \(model)")

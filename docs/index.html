@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DailyQuipAI - Learn Something New Every Day</title>
+    <meta name="description" content="DailyQuipAI delivers AI-powered knowledge cards daily. Expand your knowledge across History, Science, Art, Technology, Philosophy, and Literature.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120"><path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25" fill="white"/><path d="M0,0V15.81C13,36.92,27.64,56.86,47.69,72.05,99.41,111.27,165,111,224.58,91.58c31.15-10.15,60.09-26.07,89.67-39.8,40.92-19,84.73-46,130.83-49.67,36.26-2.85,70.9,9.42,98.6,31.56,31.77,25.39,62.32,62,103.63,73,40.44,10.79,81.35-6.69,119.13-24.28s75.16-39,116.92-43.05c59.73-5.85,113.28,22.88,168.9,38.84,30.2,8.66,59,6.17,87.09-7.5,22.43-10.89,48-26.93,60.65-49.24V0Z" opacity=".5" fill="white"/></svg>') no-repeat bottom;
+            background-size: cover;
+            opacity: 0.1;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            z-index: 1;
+            position: relative;
+        }
+
+        .logo {
+            font-size: 4em;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        h1 {
+            font-size: 3.5em;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
+        .tagline {
+            font-size: 1.5em;
+            margin-bottom: 40px;
+            opacity: 0.95;
+        }
+
+        .cta-button {
+            display: inline-block;
+            padding: 15px 40px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 50px;
+            font-size: 1.2em;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 80px 20px;
+            background: white;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 60px;
+            color: #667eea;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+
+        .feature-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        /* Categories Section */
+        .categories {
+            padding: 80px 20px;
+            background: linear-gradient(135deg, #f8f9ff 0%, #fff5f5 100%);
+        }
+
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .category-badge {
+            padding: 30px 20px;
+            background: white;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .category-badge:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .category-badge .icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        /* Pricing Section */
+        .pricing {
+            padding: 80px 20px;
+            background: white;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .pricing-card {
+            background: white;
+            border: 3px solid #f0f0f0;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-10px);
+            border-color: #667eea;
+            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2);
+        }
+
+        .pricing-card.featured {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pricing-card h3 {
+            font-size: 1.8em;
+            margin-bottom: 10px;
+        }
+
+        .pricing-card.featured h3 {
+            color: white;
+        }
+
+        .price {
+            font-size: 3em;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #667eea;
+        }
+
+        .pricing-card.featured .price {
+            color: white;
+        }
+
+        .price-sub {
+            font-size: 0.4em;
+            opacity: 0.7;
+        }
+
+        .pricing-features {
+            list-style: none;
+            margin: 30px 0;
+            text-align: left;
+        }
+
+        .pricing-features li {
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .pricing-card.featured .pricing-features li {
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .pricing-features li:before {
+            content: '✓ ';
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .pricing-card.featured .pricing-features li:before {
+            color: white;
+        }
+
+        /* Footer */
+        footer {
+            background: #2d3748;
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .footer-links {
+            margin: 20px 0;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        .footer-links a:hover {
+            opacity: 1;
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5em; }
+            .tagline { font-size: 1.2em; }
+            .logo { font-size: 3em; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="logo">📚</div>
+            <h1>DailyQuipAI</h1>
+            <p class="tagline">Learn Something New Every Day</p>
+            <p style="font-size: 1.1em; margin-bottom: 30px; opacity: 0.9;">
+                AI-powered knowledge cards delivered daily. Expand your mind across History, Science, Art, Technology, Philosophy, and Literature.
+            </p>
+            <a href="https://apps.apple.com/app/dailyquipai" class="cta-button">Download on App Store</a>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="container">
+            <h2 class="section-title">✨ Features</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>AI-Powered Learning</h3>
+                    <p>Fresh, engaging content generated daily using advanced AI technology tailored to your interests.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3>Beautiful Interface</h3>
+                    <p>Stunning glass morphism design with intuitive swipe controls for an immersive learning experience.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Track Progress</h3>
+                    <p>Build consistent learning habits with daily goals, progress tracking, and achievement badges.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔖</div>
+                    <h3>Save for Later</h3>
+                    <p>Bookmark fascinating cards to review anytime. Build your personal knowledge library.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔔</div>
+                    <h3>Daily Reminders</h3>
+                    <p>Never miss a learning session with customizable notifications that fit your schedule.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Privacy First</h3>
+                    <p>All your data stays on your device. We don't collect or share your personal information.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Categories Section -->
+    <section class="categories">
+        <div class="container">
+            <h2 class="section-title">📖 Learning Categories</h2>
+            <div class="category-grid">
+                <div class="category-badge">
+                    <div class="icon">🏛️</div>
+                    <h3>History</h3>
+                </div>
+                <div class="category-badge">
+                    <div class="icon">⚗️</div>
+                    <h3>Science</h3>
+                </div>
+                <div class="category-badge">
+                    <div class="icon">💻</div>
+                    <h3>Technology</h3>
+                </div>
+                <div class="category-badge">
+                    <div class="icon">🎨</div>
+                    <h3>Art</h3>
+                </div>
+                <div class="category-badge">
+                    <div class="icon">💭</div>
+                    <h3>Philosophy</h3>
+                </div>
+                <div class="category-badge">
+                    <div class="icon">📚</div>
+                    <h3>Literature</h3>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing">
+        <div class="container">
+            <h2 class="section-title">💰 Pricing</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>Free</h3>
+                    <div class="price">$0</div>
+                    <ul class="pricing-features">
+                        <li>5 cards per day</li>
+                        <li>All categories</li>
+                        <li>Save cards</li>
+                        <li>Progress tracking</li>
+                    </ul>
+                </div>
+
+                <div class="pricing-card featured">
+                    <h3>Premium Monthly</h3>
+                    <div class="price">$0.99<span class="price-sub">/month</span></div>
+                    <ul class="pricing-features">
+                        <li>Unlimited cards</li>
+                        <li>All categories</li>
+                        <li>Custom daily goals</li>
+                        <li>Priority support</li>
+                        <li>All future features</li>
+                    </ul>
+                </div>
+
+                <div class="pricing-card">
+                    <h3>Premium Annual</h3>
+                    <div class="price">$9.99<span class="price-sub">/year</span></div>
+                    <ul class="pricing-features">
+                        <li>Unlimited cards</li>
+                        <li>All categories</li>
+                        <li>Custom daily goals</li>
+                        <li>Priority support</li>
+                        <li>17% savings</li>
+                    </ul>
+                </div>
+
+                <div class="pricing-card">
+                    <h3>Lifetime</h3>
+                    <div class="price">$19.99<span class="price-sub">one-time</span></div>
+                    <ul class="pricing-features">
+                        <li>Unlimited cards</li>
+                        <li>All categories</li>
+                        <li>Custom daily goals</li>
+                        <li>Priority support</li>
+                        <li>Lifetime access</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p style="font-size: 1.2em; margin-bottom: 20px;">&copy; 2025 DailyQuipAI. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="terms.html">Terms of Service</a>
+            <a href="support.html">Support</a>
+        </div>
+        <p style="opacity: 0.7; margin-top: 20px;">
+            Contact: <a href="mailto:support@dailyquipai.app" style="color: white;">support@dailyquipai.app</a>
+        </p>
+    </footer>
+</body>
+</html>

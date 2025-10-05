@@ -46,6 +46,10 @@ class DailyCardsViewModel: ObservableObject {
         return cards[currentCardIndex]
     }
 
+    var llmGeneratorInstance: LLMCardGenerator {
+        llmGenerator
+    }
+
     var hasMoreCards: Bool {
         currentCardIndex < cards.count
     }
@@ -89,20 +93,8 @@ class DailyCardsViewModel: ObservableObject {
     convenience init() {
         let baseURL = URL(string: "https://api.gleam.app")!
 
-        // Get Gemini API key from environment variable or UserDefaults
-        // Priority: 1) Environment variable, 2) UserDefaults (Settings), 3) Empty string
-        let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
-            ?? UserDefaults.standard.string(forKey: "geminiAPIKey")
-            ?? ""
-
-        #if DEBUG
-        if apiKey.isEmpty {
-            print("⚠️ WARNING: No Gemini API key configured!")
-            print("💡 Set via:")
-            print("   1. Xcode → Edit Scheme → Environment Variables → GEMINI_API_KEY")
-            print("   2. Settings in-app (UserDefaults)")
-        }
-        #endif
+        // Get Gemini API key from Configuration (which handles .env and environment variables)
+        let apiKey = Configuration.geminiAPIKey
 
         self.init(
             apiClient: URLSessionAPIClient(baseURL: baseURL),

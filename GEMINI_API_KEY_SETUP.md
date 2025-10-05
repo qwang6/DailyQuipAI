@@ -1,12 +1,34 @@
 # Gemini API Key Configuration Guide
 
-**⚠️ SECURITY NOTICE:** The hardcoded API key has been removed from the codebase for security.
+**⚠️ SECURITY NOTICE:** API keys are NEVER hardcoded. Use environment variables or .env files.
 
 ---
 
 ## Quick Setup
 
-### Option 1: Xcode Environment Variable (Recommended for Development)
+### Option 1: .env File (Recommended for Development)
+
+1. **Copy the example file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit .env and add your API key:**
+   ```bash
+   GEMINI_API_KEY=your_actual_api_key_here
+   ```
+
+3. **Run the app** - API key will be loaded automatically from .env
+
+**Advantages:**
+- ✅ Never committed to Git (in .gitignore)
+- ✅ Easy to switch between different keys
+- ✅ Team members can have their own keys
+- ✅ Works in both Xcode and command-line builds
+
+---
+
+### Option 2: Xcode Environment Variable
 
 1. **In Xcode:**
    - Product → Scheme → Edit Scheme... (or ⌘<)
@@ -18,61 +40,29 @@
    - ✅ Check "Enabled"
    - Click Close
 
-2. **Your API key:**
-   ```
-   AIzaSyAxsKxX4ED02mnA5pOe9n86WIE5-PD5sv4
-   ```
-
-3. **Run the app** - API key will be loaded automatically
+2. **Run the app** - API key will be loaded from Xcode scheme
 
 **Advantages:**
-- ✅ Not committed to Git
-- ✅ Easy to change
-- ✅ Different keys for different schemes (Debug/Release)
-
----
-
-### Option 2: Settings in App (User-Friendly)
-
-**TODO:** Add Settings UI to configure API key
-
-1. Open app → Settings
-2. Tap "API Configuration"
-3. Enter Gemini API key
-4. Save
-
-**Implementation needed in SettingsView.swift:**
-
-```swift
-Section("API Configuration") {
-    SecureField("Gemini API Key", text: $apiKey)
-        .autocapitalization(.none)
-        .autocorrectionDisabled()
-
-    Button("Save API Key") {
-        UserDefaults.standard.set(apiKey, forKey: "geminiAPIKey")
-    }
-    .disabled(apiKey.isEmpty)
-}
-```
+- ✅ Different keys for different schemes (Debug/Release/Archive)
+- ✅ Per-developer configuration
 
 ---
 
 ## How It Works
 
-**Code changes in `DailyCardsViewModel.swift`:**
+**New Configuration System (`Configuration.swift`):**
 
 ```swift
-// Get API key from environment variable or UserDefaults
-let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
-    ?? UserDefaults.standard.string(forKey: "geminiAPIKey")
-    ?? ""
+// Centralized configuration management
+let apiKey = Configuration.geminiAPIKey
 ```
 
 **Priority order:**
-1. **Environment variable** `GEMINI_API_KEY` (Xcode scheme)
-2. **UserDefaults** `geminiAPIKey` (Settings in-app)
+1. **Xcode Environment Variable** `GEMINI_API_KEY`
+2. **.env file** in project root
 3. **Empty string** (will show warning in debug mode)
+
+The system automatically searches for .env files and loads them securely.
 
 ---
 
@@ -156,14 +146,12 @@ let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
 
 ---
 
-## Current API Key (For Reference)
-
-**Key:** `AIzaSyAxsKxX4ED02mnA5pOe9n86WIE5-PD5sv4`
+## Getting Your API Key
 
 **⚠️ Important:**
-- This key is already exposed in previous GitHub commits
-- Consider rotating it if this is a production key
-- Get new key at: https://makersuite.google.com/app/apikey
+- Never share API keys in documentation or code
+- Each developer should use their own key
+- Get new key at: https://aistudio.google.com/app/apikey
 
 ---
 
@@ -196,7 +184,7 @@ let apiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
 
 1. Create `.env` file (NOT committed to Git):
    ```bash
-   GEMINI_API_KEY=AIzaSyAxsKxX4ED02mnA5pOe9n86WIE5-PD5sv4
+   GEMINI_API_KEY=your_actual_api_key_here
    ```
 
 2. Add to `.gitignore`:

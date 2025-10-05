@@ -29,14 +29,6 @@ struct OnboardingCoordinator: View {
                 }
                 .transition(.opacity)
 
-            case .learningGoal:
-                LearningGoalView(
-                    dailyGoal: $viewModel.dailyGoal
-                ) {
-                    viewModel.goToNextStep()
-                }
-                .transition(.opacity)
-
             case .notificationPermission:
                 NotificationPermissionView(
                     onContinue: {
@@ -58,7 +50,6 @@ struct OnboardingCoordinator: View {
 class OnboardingViewModel: ObservableObject {
     @Published var currentStep: OnboardingStep = .welcome
     @Published var selectedCategories: Set<Category> = []
-    @Published var dailyGoal: Int = 10
 
     func goToNextStep() {
         withAnimation {
@@ -66,8 +57,6 @@ class OnboardingViewModel: ObservableObject {
             case .welcome:
                 currentStep = .categorySelection
             case .categorySelection:
-                currentStep = .learningGoal
-            case .learningGoal:
                 currentStep = .notificationPermission
             case .notificationPermission:
                 break // Should not happen
@@ -91,8 +80,8 @@ class OnboardingViewModel: ObservableObject {
         let categoryStrings = selectedCategories.map { $0.rawValue }
         UserDefaults.standard.set(categoryStrings, forKey: "selectedCategories")
 
-        // Save daily goal
-        UserDefaults.standard.set(dailyGoal, forKey: "dailyGoal")
+        // Set default daily goal (5 cards for free users)
+        UserDefaults.standard.set(5, forKey: "dailyGoal")
     }
 }
 
@@ -101,7 +90,6 @@ class OnboardingViewModel: ObservableObject {
 enum OnboardingStep {
     case welcome
     case categorySelection
-    case learningGoal
     case notificationPermission
 }
 

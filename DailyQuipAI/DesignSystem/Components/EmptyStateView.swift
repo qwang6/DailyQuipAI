@@ -43,8 +43,63 @@ struct EmptyStateView: View {
 
 // MARK: - Loading View
 
-/// Loading indicator view
+/// Loading indicator view with rotating tips
 struct LoadingView: View {
+    var message: String = "Loading..."
+    @StateObject private var tipsManager: LoadingTipsManager
+
+    // Simple initializer for static message
+    init(message: String = "Loading...") {
+        self.message = message
+        // Create a simple tips generator with hardcoded tips
+        let generator = LoadingTipsGenerator(
+            llmGenerator: LLMCardGenerator(apiKey: "", provider: .gemini)
+        )
+        _tipsManager = StateObject(wrappedValue: LoadingTipsManager(tipsGenerator: generator))
+    }
+
+    // Advanced initializer with tips rotation
+    init(withRotatingTips: Bool = false, llmGenerator: LLMCardGenerator? = nil) {
+        self.message = "Loading..."
+
+        if withRotatingTips, let generator = llmGenerator {
+            let tipsGen = LoadingTipsGenerator(llmGenerator: generator)
+            _tipsManager = StateObject(wrappedValue: LoadingTipsManager(tipsGenerator: tipsGen))
+        } else {
+            let tipsGen = LoadingTipsGenerator(
+                llmGenerator: LLMCardGenerator(apiKey: "", provider: .gemini)
+            )
+            _tipsManager = StateObject(wrappedValue: LoadingTipsManager(tipsGenerator: tipsGen))
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .scaleEffect(1.2)
+
+            Text(tipsManager.currentTip.isEmpty ? message : tipsManager.currentTip)
+                .bodyMedium()
+                .foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.xl)
+                .transition(.opacity)
+                .id(tipsManager.currentTip) // Force view update on tip change
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            // Start rotating tips when view appears (non-blocking)
+            tipsManager.startRotatingTips()
+        }
+        .onDisappear {
+            // Stop rotating when view disappears
+            tipsManager.stopRotatingTips()
+        }
+    }
+}
+
+/// Simple loading view without rotating tips
+struct SimpleLoadingView: View {
     var message: String = "Loading..."
 
     var body: some View {
