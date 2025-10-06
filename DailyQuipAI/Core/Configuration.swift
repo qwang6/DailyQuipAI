@@ -15,14 +15,22 @@ enum Configuration {
     /// Get Gemini API key from environment or .env file
     static var geminiAPIKey: String {
         // Priority:
-        // 1. Xcode scheme environment variable (for development)
-        // 2. .env file in project root (for local development)
-        // 3. Empty string (will cause error - intentional)
+        // 1. Info.plist (for production/archive builds)
+        // 2. Xcode scheme environment variable (for development)
+        // 3. .env file in project root (for local development)
+        // 4. Empty string (will cause error - intentional)
 
+        // Check Info.plist first (for production builds)
+        if let plistKey = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String, !plistKey.isEmpty {
+            return plistKey
+        }
+
+        // Check environment variable (Xcode scheme)
         if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !envKey.isEmpty {
             return envKey
         }
 
+        // Check .env file (local development)
         if let envFileKey = loadFromEnvFile(key: "GEMINI_API_KEY"), !envFileKey.isEmpty {
             return envFileKey
         }
@@ -30,10 +38,11 @@ enum Configuration {
         #if DEBUG
         print("⚠️ WARNING: No Gemini API key configured!")
         print("💡 Configure via:")
-        print("   1. Xcode → Product → Scheme → Edit Scheme → Run → Environment Variables")
-        print("      Add: GEMINI_API_KEY = your_api_key_here")
-        print("   2. Create .env file in project root with:")
+        print("   1. For Archive/Production: Add to Info.plist")
+        print("      Key: GEMINI_API_KEY, Value: your_api_key_here")
+        print("   2. For Development: Create .env file in project root with:")
         print("      GEMINI_API_KEY=your_api_key_here")
+        print("   3. Or Xcode → Scheme → Environment Variables")
         #endif
 
         return ""
