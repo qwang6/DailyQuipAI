@@ -12,17 +12,15 @@ enum Configuration {
 
     // MARK: - Environment Variables
 
-    /// Get Gemini API key from environment or .env file
+    /// Get Gemini API key from Config.xcconfig
     static var geminiAPIKey: String {
         // Priority:
-        // 1. Build Settings (GEMINI_API_KEY user-defined setting) - works for all builds
-        // 2. Xcode scheme environment variable (for development)
-        // 3. .env file in project root (for local development)
-        // 4. Empty string (will cause error - intentional)
+        // 1. GeneratedConfig (from Config.xcconfig) - works for all builds
+        // 2. Environment variable (DEBUG only, for development flexibility)
+        // 3. .env file (DEBUG only, for local development)
 
-        // Check Build Settings (compiled into the app)
         #if DEBUG
-        // In debug, also check env vars and .env for flexibility
+        // In debug, check env vars and .env first for development flexibility
         if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !envKey.isEmpty {
             return envKey
         }
@@ -32,18 +30,15 @@ enum Configuration {
         }
         #endif
 
-        // For all builds (Debug and Release), use the build setting
-        // This is compiled into Info.plist automatically by Xcode
-        if let buildKey = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String, !buildKey.isEmpty {
-            return buildKey
+        // For all builds: use GeneratedConfig (compiled from Config.xcconfig)
+        if !GeneratedConfig.geminiAPIKey.isEmpty {
+            return GeneratedConfig.geminiAPIKey
         }
 
         #if DEBUG
         print("⚠️ WARNING: No Gemini API key configured!")
-        print("💡 Configure in Xcode:")
-        print("   Project → Target → Build Settings → + → Add User-Defined Setting")
-        print("   Name: GEMINI_API_KEY")
-        print("   Value: your_api_key_here")
+        print("💡 Create Config.xcconfig with:")
+        print("   GEMINI_API_KEY = your_api_key_here")
         #endif
 
         return ""

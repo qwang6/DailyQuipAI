@@ -116,3 +116,4 @@ iOSInjectionProject/
 .env.local
 .env.*.local
 Config.xcconfig
+DailyQuipAI/Core/GeneratedConfig.swift
