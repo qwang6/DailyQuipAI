@@ -237,9 +237,17 @@ class DailyCardsViewModel: ObservableObject {
         do {
             let selectedCategories = getSelectedCategories()
             let dailyGoal = UserDefaults.standard.integer(forKey: "dailyGoal")
-            let cardCount = dailyGoal > 0 ? dailyGoal : 5  // Changed default from 10 to 5
 
-            print("🔄 Fetching \(cardCount) new cards from LLM...")
+            // For free users: enforce 5 card limit regardless of settings
+            // For premium users: use their daily goal setting
+            let cardCount: Int
+            if subscriptionManager.isPremium {
+                cardCount = dailyGoal > 0 ? dailyGoal : 5
+            } else {
+                cardCount = 5  // Free users always get 5 cards
+            }
+
+            print("🔄 Fetching \(cardCount) new cards from LLM (isPremium: \(subscriptionManager.isPremium))...")
 
             // Generate cards using LLM (single batch request)
             let newCards = try await llmGenerator.generateDailyCards(
@@ -431,7 +439,15 @@ class DailyCardsViewModel: ObservableObject {
         do {
             let selectedCategories = getSelectedCategories()
             let dailyGoal = UserDefaults.standard.integer(forKey: "dailyGoal")
-            let cardCount = dailyGoal > 0 ? dailyGoal : 5
+
+            // For free users: enforce 5 card limit regardless of settings
+            // For premium users: use their daily goal setting
+            let cardCount: Int
+            if subscriptionManager.isPremium {
+                cardCount = dailyGoal > 0 ? dailyGoal : 5
+            } else {
+                cardCount = 5  // Free users always get 5 cards
+            }
 
             // Generate next batch using LLM
             let prefetchedCards = try await llmGenerator.generateDailyCards(
