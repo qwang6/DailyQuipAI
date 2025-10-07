@@ -271,9 +271,13 @@ class DailyCardsViewModel: ObservableObject {
             print("✅ Fetched and cached \(newCards.count) cards across \(allCardsByCategory.keys.count) categories")
             isLoading = false
 
-            // Start prefetching next batch
-            Task {
-                await prefetchNextBatch()
+            // Start prefetching next batch (only for premium users)
+            if subscriptionManager.isPremium {
+                Task {
+                    await prefetchNextBatch()
+                }
+            } else {
+                print("⏭️ Skipping prefetch - free user has reached daily limit")
             }
 
         } catch {
@@ -371,10 +375,10 @@ class DailyCardsViewModel: ObservableObject {
                 // Update cache to track progress
                 updateCacheAfterViewing()
 
-                // Prefetch next batch when user is on second-to-last card
+                // Prefetch next batch when user is on second-to-last card (premium only)
                 let cardsRemaining = cards.count - currentCardIndex
                 print("📊 Cards remaining: \(cardsRemaining)")
-                if cardsRemaining == 1 && !isPrefetching {
+                if cardsRemaining == 1 && !isPrefetching && subscriptionManager.isPremium {
                     print("🔮 Triggering prefetch for next batch")
                     Task {
                         await prefetchNextBatch()
@@ -414,9 +418,11 @@ class DailyCardsViewModel: ObservableObject {
             nextBatchCards = []
             saveCategoryCards()
 
-            // Start prefetching the batch after that
-            Task {
-                await prefetchNextBatch()
+            // Start prefetching the batch after that (premium only)
+            if subscriptionManager.isPremium {
+                Task {
+                    await prefetchNextBatch()
+                }
             }
         } else {
             print("⚠️ No prefetched batch available, fetching new cards...")
