@@ -1,39 +1,39 @@
 #!/bin/bash
 
-# 验证最新Archive中是否包含API key
+echo "🔍 Checking latest Archive for API key..."
+echo ""
 
-echo "🔍 Finding latest Archive..."
+# Find the most recent archive
 ARCHIVE=$(ls -t ~/Library/Developer/Xcode/Archives/*/*/*.xcarchive 2>/dev/null | head -1)
 
 if [ -z "$ARCHIVE" ]; then
-    echo "❌ No archives found. Please create an Archive first."
-    echo "   Product → Archive"
+    echo "❌ No archive found!"
+    echo "Please create an Archive first (Product → Archive in Xcode)"
     exit 1
 fi
 
-echo "📦 Latest Archive: $(basename "$ARCHIVE")"
+echo "📦 Archive found: $(basename "$ARCHIVE")"
+echo "📅 Date: $(basename $(dirname "$ARCHIVE"))"
 echo ""
 
-INFO_PLIST="$ARCHIVE/Products/Applications/DailyQuipAI.app/Info.plist"
+# Check if GeneratedConfig.swift is compiled into the binary
+APP_PATH="$ARCHIVE/Products/Applications/DailyQuipAI.app/DailyQuipAI"
 
-if [ ! -f "$INFO_PLIST" ]; then
-    echo "❌ Info.plist not found in archive"
+if [ ! -f "$APP_PATH" ]; then
+    echo "❌ App binary not found at: $APP_PATH"
     exit 1
 fi
 
-echo "🔑 Checking for GEMINI_API_KEY..."
-API_KEY=$(/usr/libexec/PlistBuddy -c "Print :GEMINI_API_KEY" "$INFO_PLIST" 2>/dev/null)
-
-if [ -z "$API_KEY" ]; then
-    echo "❌ GEMINI_API_KEY NOT FOUND in archive!"
+# Use strings to check if the API key is in the binary
+if strings "$APP_PATH" | grep -q "AIzaSy"; then
+    echo "✅ API KEY FOUND in compiled binary!"
     echo ""
-    echo "The archive does NOT contain the API key."
-    echo "You need to add it to Info before archiving."
-    exit 1
+    echo "🎉 Archive is ready for upload to App Store Connect"
 else
-    echo "✅ GEMINI_API_KEY FOUND in archive!"
+    echo "❌ API KEY NOT FOUND in binary!"
     echo ""
-    echo "API Key: ${API_KEY:0:20}... (truncated for security)"
-    echo ""
-    echo "The archive is ready to upload! 🚀"
+    echo "⚠️  Please check:"
+    echo "   1. Config.xcconfig exists and has GEMINI_API_KEY"
+    echo "   2. GeneratedConfig.swift exists with the API key"
+    echo "   3. Configuration.swift references GeneratedConfig"
 fi
