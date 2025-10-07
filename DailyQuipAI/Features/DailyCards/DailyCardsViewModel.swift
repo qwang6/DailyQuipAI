@@ -411,6 +411,13 @@ class DailyCardsViewModel: ObservableObject {
 
     /// Load the next batch of cards (from prefetch or fetch new)
     private func loadNextBatch() {
+        // Free users should not load next batch - show paywall instead
+        if !subscriptionManager.isPremium {
+            print("🚫 Free user reached end of daily cards - showing paywall")
+            showPaywall = true
+            return
+        }
+
         if !nextBatchCards.isEmpty {
             print("📦 Loading prefetched next batch: \(nextBatchCards.count) cards")
             cards = nextBatchCards
