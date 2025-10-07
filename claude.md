@@ -58,8 +58,8 @@ grep -r "AIzaSy" *.xcscheme && echo "⚠️ API KEY in xcscheme!" || echo "✅ S
 - **Currency**: USD (United States Dollar)
 - **Pricing Tiers**:
   - Monthly subscription: $0.99/month
-  - Annual subscription: $9.99/year (~17% savings)
-  - Lifetime membership: $19.99
+  - Annual subscription: $7.99/year (~17% savings)
+  - Lifetime membership: $12.99
 
 ## Development Principles
 1. Build with English-first mindset

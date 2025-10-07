@@ -60,8 +60,8 @@ For each IAP (Monthly, Annual, Lifetime), you need to upload a screenshot showin
 1. **Monthly Premium** - $0.99/month
    - Product ID: `com.dailyquipai.premium.monthly`
 
-2. **Annual Premium** - $9.99/year
+2. **Annual Premium** - $7.99/year
    - Product ID: `com.dailyquipai.premium.annual`
 
-3. **Lifetime Premium** - $19.99 one-time
+3. **Lifetime Premium** - $12.99 one-time
    - Product ID: `com.dailyquipai.premium.lifetime`

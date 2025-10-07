@@ -138,8 +138,8 @@ See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for detailed milestones.
 
 - **Free**: 3 cards/day, basic features
 - **Pro Monthly**: $0.99/month - 5-8 cards/day, all features
-- **Pro Annual**: $9.99/year - Save 17%
-- **Lifetime**: $19.99 - One-time purchase
+- **Pro Annual**: $7.99/year - Save 17%
+- **Lifetime**: $12.99 - One-time purchase
 
 ## Contributing
 

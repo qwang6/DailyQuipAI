@@ -702,7 +702,7 @@ DailyQuipAI/
 
 **Acceptance Criteria**:
 - [ ] Subscription status displays correctly
-- [ ] Can purchase all tiers ($0.99, $9.99, $19.99)
+- [ ] Can purchase all tiers ($0.99, $7.99, $12.99)
 - [ ] Restore purchases works
 - [ ] Payment errors handled gracefully
 - [ ] Receipt validation works

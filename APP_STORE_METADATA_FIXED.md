@@ -67,8 +67,8 @@ Premium: Unlimited cards, custom goals, and more
 
 Premium subscriptions:
 - Monthly: $0.99/month
-- Annual: $9.99/year (save 17%)
-- Lifetime: $19.99 (one-time payment)
+- Annual: $7.99/year (save 17%)
+- Lifetime: $12.99 (one-time payment)
 
 PRIVACY FIRST
 
@@ -157,8 +157,8 @@ Never miss a learning session with customizable notifications.
 Premium Options
 Unlock unlimited cards with flexible subscription plans:
 - Monthly: $0.99
-- Annual: $9.99 (17% off)
-- Lifetime: $19.99
+- Annual: $7.99 (17% off)
+- Lifetime: $12.99
 
 Privacy First
 All your data stays on your device. We don't collect or share your information.

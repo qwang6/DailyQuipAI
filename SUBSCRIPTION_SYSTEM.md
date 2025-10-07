@@ -18,11 +18,11 @@ DailyQuipAI implements a freemium model with daily card limits for free users an
    - All categories
    - Advanced analytics
 
-2. **Annual** - $9.99/year (Save 17%)
+2. **Annual** - $7.99/year (Save 17%)
    - Same as Monthly
    - Best value for regular users
 
-3. **Lifetime** - $19.99 (one-time)
+3. **Lifetime** - $12.99 (one-time)
    - Same as Monthly/Annual
    - No recurring payments
 
@@ -181,13 +181,13 @@ subscriptionManager.resetViewedCount()
 
 ### Market Research
 - Duolingo: $6.99/month, $47.99/year
-- Blinkist: $9.99/month, $79.99/year
+- Blinkist: $7.99/month, $79.99/year
 - Elevate: $4.99/month, $39.99/year
 
 ### Our Pricing
 - **Monthly**: $0.99 (lowest tier, attract trials)
-- **Annual**: $9.99 (17% savings, encourage commitment)
-- **Lifetime**: $19.99 (2 years worth, appeals to long-term users)
+- **Annual**: $7.99 (17% savings, encourage commitment)
+- **Lifetime**: $12.99 (2 years worth, appeals to long-term users)
 
 ### Revenue Model
 - Target: 5% conversion to paid

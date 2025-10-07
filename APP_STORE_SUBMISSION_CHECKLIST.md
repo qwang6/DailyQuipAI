@@ -123,7 +123,7 @@ Create 3 IAPs:
 - [ ] **Type:** Auto-Renewable Subscription
 - [ ] **Product ID:** `com.dailyquipai.premium.annual`
 - [ ] **Reference Name:** Annual Premium Subscription
-- [ ] **Price:** $9.99
+- [ ] **Price:** $7.99
 - [ ] **Subscription Duration:** 1 year
 - [ ] **Review screenshot** uploaded
 - [ ] **Review notes** added
@@ -133,7 +133,7 @@ Create 3 IAPs:
 - [ ] **Type:** Non-Consumable
 - [ ] **Product ID:** `com.dailyquipai.premium.lifetime`
 - [ ] **Reference Name:** Lifetime Premium Access
-- [ ] **Price:** $19.99
+- [ ] **Price:** $12.99
 - [ ] **Review screenshot** uploaded
 - [ ] **Review notes** added
 - [ ] **Status:** Ready to Submit

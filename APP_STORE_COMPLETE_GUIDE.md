@@ -121,8 +121,8 @@ https://qwang6.github.io/DailyQuipAI/
 
 **Premium Subscriptions:**
 - Monthly: $0.99/month
-- Annual: $9.99/year (17% savings)
-- Lifetime: $19.99 (one-time)
+- Annual: $7.99/year (17% savings)
+- Lifetime: $12.99 (one-time)
 
 **Premium Benefits:**
 - Unlimited cards

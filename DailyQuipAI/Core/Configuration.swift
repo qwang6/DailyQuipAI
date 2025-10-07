@@ -15,34 +15,35 @@ enum Configuration {
     /// Get Gemini API key from environment or .env file
     static var geminiAPIKey: String {
         // Priority:
-        // 1. Info.plist (for production/archive builds)
+        // 1. Build Settings (GEMINI_API_KEY user-defined setting) - works for all builds
         // 2. Xcode scheme environment variable (for development)
         // 3. .env file in project root (for local development)
         // 4. Empty string (will cause error - intentional)
 
-        // Check Info.plist first (for production builds)
-        if let plistKey = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String, !plistKey.isEmpty {
-            return plistKey
-        }
-
-        // Check environment variable (Xcode scheme)
+        // Check Build Settings (compiled into the app)
+        #if DEBUG
+        // In debug, also check env vars and .env for flexibility
         if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !envKey.isEmpty {
             return envKey
         }
 
-        // Check .env file (local development)
         if let envFileKey = loadFromEnvFile(key: "GEMINI_API_KEY"), !envFileKey.isEmpty {
             return envFileKey
+        }
+        #endif
+
+        // For all builds (Debug and Release), use the build setting
+        // This is compiled into Info.plist automatically by Xcode
+        if let buildKey = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String, !buildKey.isEmpty {
+            return buildKey
         }
 
         #if DEBUG
         print("⚠️ WARNING: No Gemini API key configured!")
-        print("💡 Configure via:")
-        print("   1. For Archive/Production: Add to Info.plist")
-        print("      Key: GEMINI_API_KEY, Value: your_api_key_here")
-        print("   2. For Development: Create .env file in project root with:")
-        print("      GEMINI_API_KEY=your_api_key_here")
-        print("   3. Or Xcode → Scheme → Environment Variables")
+        print("💡 Configure in Xcode:")
+        print("   Project → Target → Build Settings → + → Add User-Defined Setting")
+        print("   Name: GEMINI_API_KEY")
+        print("   Value: your_api_key_here")
         #endif
 
         return ""

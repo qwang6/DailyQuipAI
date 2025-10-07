@@ -115,3 +115,4 @@ iOSInjectionProject/
 .env
 .env.local
 .env.*.local
+Config.xcconfig

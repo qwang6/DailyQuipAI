@@ -74,8 +74,8 @@ Premium: Unlimited cards, custom goals, and more
 
 Premium subscriptions:
 • Monthly: $0.99/month
-• Annual: $9.99/year (save 17%)
-• Lifetime: $19.99 (one-time payment)
+• Annual: $7.99/year (save 17%)
+• Lifetime: $12.99 (one-time payment)
 
 🔒 PRIVACY FIRST
 
@@ -196,8 +196,8 @@ Never miss a learning session with customizable notifications.
 💎 Premium Options
 Unlock unlimited cards with flexible subscription plans:
 • Monthly: $0.99
-• Annual: $9.99 (17% off)
-• Lifetime: $19.99
+• Annual: $7.99 (17% off)
+• Lifetime: $12.99
 
 🔒 Privacy First
 All your data stays on your device. We don't collect or share your information.
@@ -302,13 +302,13 @@ Free (with In-App Purchases)
 ### 2. Annual Premium Subscription
 - **Reference Name:** Annual Premium
 - **Product ID:** `com.dailyquipai.premium.annual`
-- **Price:** $9.99
+- **Price:** $7.99
 - **Type:** Auto-Renewable Subscription
 
 ### 3. Lifetime Premium
 - **Reference Name:** Lifetime Premium
 - **Product ID:** `com.dailyquipai.premium.lifetime`
-- **Price:** $19.99
+- **Price:** $12.99
 - **Type:** Non-Consumable
 
 ---

@@ -93,15 +93,15 @@ struct PaywallView: View {
 
                     PricingButton(
                         title: "Annual",
-                        price: "$9.99/year",
-                        badge: "Save 17%",
+                        price: "$7.99/year",
+                        badge: "Save 20%",
                         subscriptionType: .annual,
                         onSelect: onUpgrade
                     )
 
                     PricingButton(
                         title: "Lifetime",
-                        price: "$19.99 once",
+                        price: "$12.99 once",
                         badge: "Best Value",
                         subscriptionType: .lifetime,
                         onSelect: onUpgrade
