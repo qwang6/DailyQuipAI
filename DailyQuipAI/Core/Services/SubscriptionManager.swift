@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import StoreKit
 
 /// Manages user subscription state and card limits
 class SubscriptionManager: ObservableObject {
@@ -52,28 +53,61 @@ class SubscriptionManager: ObservableObject {
         print("✅ Subscription updated to: \(type.rawValue)")
     }
 
-    /// Restore previous purchases
+    /// Restore previous purchases using StoreKit 2
     /// Returns true if any purchases were restored, false otherwise
     @MainActor
     func restorePurchases() async throws -> Bool {
-        // In a real app, this would use StoreKit to restore purchases
-        // For now, we'll check if there's a stored subscription
-        print("🔄 Attempting to restore purchases...")
+        print("🔄 Attempting to restore purchases via StoreKit...")
 
-        // Simulate restore by checking UserDefaults
-        // In production, this would call:
-        // try await AppStore.sync()
-        // or Product.LatestTransaction for each product
+        // Sync with App Store to get latest transactions
+        try await AppStore.sync()
 
-        if let typeString = UserDefaults.standard.string(forKey: subscriptionTypeKey),
-           let type = SubscriptionType(rawValue: typeString),
-           type != .free {
-            print("✅ Restored subscription: \(type.rawValue)")
-            subscriptionType = type
+        var restoredType: SubscriptionType?
+
+        // Check for valid transactions for each product ID
+        let productIDs = [
+            "com.qwang.dailyquipai.premium.monthly",
+            "com.qwang.dailyquipai.premium.annual",
+            "com.qwang.dailyquipai.premium.lifetime"
+        ]
+
+        for productID in productIDs {
+            // Check for latest verified transaction
+            if let transaction = await Transaction.latest(for: productID) {
+                // Verify the transaction
+                switch transaction {
+                case .verified(let verifiedTransaction):
+                    // Check if transaction is not expired/revoked
+                    if verifiedTransaction.revocationDate == nil {
+                        // Map product ID to subscription type
+                        if productID.contains("monthly") {
+                            restoredType = .monthly
+                            print("✅ Restored Monthly subscription")
+                        } else if productID.contains("annual") {
+                            restoredType = .annual
+                            print("✅ Restored Annual subscription")
+                        } else if productID.contains("lifetime") {
+                            restoredType = .lifetime
+                            print("✅ Restored Lifetime subscription")
+                        }
+
+                        // Finish the transaction
+                        await verifiedTransaction.finish()
+                        break // Found a valid subscription
+                    }
+                case .unverified:
+                    print("⚠️ Unverified transaction for \(productID)")
+                }
+            }
+        }
+
+        // Update subscription if we found one
+        if let type = restoredType {
+            updateSubscription(to: type)
             return true
         }
 
-        print("ℹ️ No purchases to restore")
+        print("ℹ️ No valid purchases to restore")
         return false
     }
 
