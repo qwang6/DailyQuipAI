@@ -26,19 +26,15 @@ struct SettingsView: View {
                             .frame(width: 28)
 
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text(subscriptionManager.isPremium ? "Premium" : "Free")
+                            // Display subscription type name
+                            Text(subscriptionTypeName)
                                 .font(.bodyMedium)
                                 .foregroundColor(.textPrimary)
 
-                            if let remaining = subscriptionManager.remainingCardsToday {
-                                Text("\(remaining) cards remaining today")
-                                    .font(.captionLarge)
-                                    .foregroundColor(.textSecondary)
-                            } else {
-                                Text("Unlimited cards")
-                                    .font(.captionLarge)
-                                    .foregroundColor(.textSecondary)
-                            }
+                            // Display subscription details
+                            Text(subscriptionDetails)
+                                .font(.captionLarge)
+                                .foregroundColor(.textSecondary)
                         }
 
                         Spacer()
@@ -213,6 +209,39 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Subscription Display
+
+    /// Get display name for current subscription type
+    private var subscriptionTypeName: String {
+        switch subscriptionManager.subscriptionType {
+        case .free:
+            return "Free"
+        case .monthly:
+            return "Premium Monthly"
+        case .annual:
+            return "Premium Annual"
+        case .lifetime:
+            return "Premium Lifetime"
+        }
+    }
+
+    /// Get details text for current subscription
+    private var subscriptionDetails: String {
+        switch subscriptionManager.subscriptionType {
+        case .free:
+            if let remaining = subscriptionManager.remainingCardsToday {
+                return "\(remaining) cards remaining today"
+            }
+            return "5 cards per day"
+        case .monthly:
+            return "Unlimited cards • $0.99/month"
+        case .annual:
+            return "Unlimited cards • $7.99/year"
+        case .lifetime:
+            return "Unlimited cards • One-time purchase"
         }
     }
 
