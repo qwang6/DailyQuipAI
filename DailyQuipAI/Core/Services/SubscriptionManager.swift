@@ -52,6 +52,31 @@ class SubscriptionManager: ObservableObject {
         print("✅ Subscription updated to: \(type.rawValue)")
     }
 
+    /// Restore previous purchases
+    /// Returns true if any purchases were restored, false otherwise
+    @MainActor
+    func restorePurchases() async throws -> Bool {
+        // In a real app, this would use StoreKit to restore purchases
+        // For now, we'll check if there's a stored subscription
+        print("🔄 Attempting to restore purchases...")
+
+        // Simulate restore by checking UserDefaults
+        // In production, this would call:
+        // try await AppStore.sync()
+        // or Product.LatestTransaction for each product
+
+        if let typeString = UserDefaults.standard.string(forKey: subscriptionTypeKey),
+           let type = SubscriptionType(rawValue: typeString),
+           type != .free {
+            print("✅ Restored subscription: \(type.rawValue)")
+            subscriptionType = type
+            return true
+        }
+
+        print("ℹ️ No purchases to restore")
+        return false
+    }
+
     // MARK: - Daily Limit Management
 
     /// Check if user can view more cards today

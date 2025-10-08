@@ -51,8 +51,31 @@ struct SettingsView: View {
                             .foregroundColor(.brandPrimary)
                         }
                     }
+
+                    // Restore Purchases Button
+                    Button {
+                        Task {
+                            await restorePurchases()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(.brandPrimary)
+                                .frame(width: 28)
+
+                            Text("Restore Purchases")
+                                .font(.bodyMedium)
+                                .foregroundColor(.textPrimary)
+
+                            Spacer()
+                        }
+                    }
                 } header: {
                     Text("Subscription")
+                } footer: {
+                    Text("Already purchased? Tap 'Restore Purchases' to restore your subscription.")
+                        .font(.captionLarge)
+                        .foregroundColor(.textSecondary)
                 }
 
                 // Category Preferences Section
@@ -190,6 +213,24 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Restore Purchases
+
+    /// Restore previously purchased subscriptions
+    private func restorePurchases() async {
+        do {
+            let restored = try await subscriptionManager.restorePurchases()
+            if restored {
+                // Show success message
+                print("✅ Purchases restored successfully")
+            } else {
+                // Show "no purchases found" message
+                print("ℹ️ No purchases to restore")
+            }
+        } catch {
+            print("❌ Failed to restore purchases: \(error)")
         }
     }
 }
