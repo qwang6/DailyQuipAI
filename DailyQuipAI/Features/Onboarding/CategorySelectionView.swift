@@ -107,7 +107,7 @@ struct CategorySelectionCard: View {
                 }
 
                 // Label
-                Text(category.rawValue)
+                Text(category.displayName)
                     .font(.labelMedium)
                     .foregroundColor(.textPrimary)
             }

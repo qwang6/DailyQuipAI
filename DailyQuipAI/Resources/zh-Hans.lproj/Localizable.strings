@@ -36,9 +36,12 @@
 "onboarding.goal.continue" = "继续";
 "onboarding.goal.subtitle" = "您每天想学习多少张卡片？";
 "onboarding.goal.title" = "设置每日目标";
+"onboarding.notifications.benefit.achievements" = "成就通知";
+"onboarding.notifications.benefit.dailyReminders" = "在您偏好的时间每日提醒";
+"onboarding.notifications.benefit.streakAlerts" = "连胜提醒以保持动力";
 "onboarding.notifications.enable" = "启用通知";
 "onboarding.notifications.skip" = "稍后再说";
-"onboarding.notifications.subtitle" = "获取每日学习提醒";
+"onboarding.notifications.subtitle" = "获取每日提醒以保持您的学习连胜";
 "onboarding.notifications.title" = "保持专注";
 "onboarding.welcome.getStarted" = "开始使用";
 "onboarding.welcome.subtitle" = "每天学习新知识";

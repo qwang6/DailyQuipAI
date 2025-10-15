@@ -24,11 +24,11 @@ struct NotificationPermissionView: View {
                     .foregroundStyle(LinearGradient.brand)
 
                 VStack(spacing: Spacing.xs) {
-                    Text("Stay on Track")
+                    Text("onboarding.notifications.title".localized)
                         .font(.displayMedium)
                         .foregroundColor(.textPrimary)
 
-                    Text("Get daily reminders to keep your learning streak alive")
+                    Text("onboarding.notifications.subtitle".localized)
                         .font(.bodyMedium)
                         .foregroundColor(.textSecondary)
                         .multilineTextAlignment(.center)
@@ -42,17 +42,17 @@ struct NotificationPermissionView: View {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 NotificationBenefit(
                     icon: "clock.fill",
-                    text: "Daily reminders at your preferred time"
+                    text: "onboarding.notifications.benefit.dailyReminders".localized
                 )
 
                 NotificationBenefit(
                     icon: "flame.fill",
-                    text: "Streak alerts to maintain momentum"
+                    text: "onboarding.notifications.benefit.streakAlerts".localized
                 )
 
                 NotificationBenefit(
                     icon: "trophy.fill",
-                    text: "Achievement notifications"
+                    text: "onboarding.notifications.benefit.achievements".localized
                 )
             }
             .padding(.horizontal, Spacing.xl)
@@ -61,11 +61,11 @@ struct NotificationPermissionView: View {
 
             // Action buttons
             VStack(spacing: Spacing.md) {
-                PrimaryButton(title: "Enable Notifications") {
+                PrimaryButton(title: "onboarding.notifications.enable".localized) {
                     requestNotificationPermission()
                 }
 
-                TextButton(title: "Maybe Later", action: onSkip)
+                TextButton(title: "onboarding.notifications.skip".localized, action: onSkip)
             }
             .padding(.horizontal, Spacing.xl)
             .paddingVertical()

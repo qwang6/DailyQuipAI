@@ -84,9 +84,12 @@
 "onboarding.goal.continue" = "Continue";
 
 "onboarding.notifications.title" = "Stay on Track";
-"onboarding.notifications.subtitle" = "Get daily reminders to learn";
+"onboarding.notifications.subtitle" = "Get daily reminders to keep your learning streak alive";
 "onboarding.notifications.enable" = "Enable Notifications";
 "onboarding.notifications.skip" = "Maybe Later";
+"onboarding.notifications.benefit.dailyReminders" = "Daily reminders at your preferred time";
+"onboarding.notifications.benefit.streakAlerts" = "Streak alerts to maintain momentum";
+"onboarding.notifications.benefit.achievements" = "Achievement notifications";
 "onboarding.feature.learnDaily.title" = "Learn Daily";
 "onboarding.feature.learnDaily.description" = "Discover new knowledge cards every day";
 "onboarding.feature.testYourself.title" = "Test Yourself";
