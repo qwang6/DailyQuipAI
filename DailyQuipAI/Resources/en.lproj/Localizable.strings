@@ -75,6 +75,8 @@
 "onboarding.categories.title" = "Choose Your Interests";
 "onboarding.categories.subtitle" = "Select topics you'd like to explore";
 "onboarding.categories.continue" = "Continue";
+"onboarding.categories.selectAtLeastOne" = "Select at least one category";
+"onboarding.categories.selectedCount" = "%d selected";
 
 "onboarding.goal.title" = "Set Your Daily Goal";
 "onboarding.goal.subtitle" = "How many cards would you like per day?";
@@ -85,6 +87,12 @@
 "onboarding.notifications.subtitle" = "Get daily reminders to learn";
 "onboarding.notifications.enable" = "Enable Notifications";
 "onboarding.notifications.skip" = "Maybe Later";
+"onboarding.feature.learnDaily.title" = "Learn Daily";
+"onboarding.feature.learnDaily.description" = "Discover new knowledge cards every day";
+"onboarding.feature.testYourself.title" = "Test Yourself";
+"onboarding.feature.testYourself.description" = "Reinforce learning with interactive quizzes";
+"onboarding.feature.trackProgress.title" = "Track Progress";
+"onboarding.feature.trackProgress.description" = "Build streaks and earn achievements";
 
 /* Subscription */
 "subscription.title" = "Unlock Full Access";

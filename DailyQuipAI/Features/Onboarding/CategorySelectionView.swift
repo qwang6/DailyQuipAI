@@ -21,11 +21,11 @@ struct CategorySelectionView: View {
         VStack(spacing: Spacing.xl) {
             // Header
             VStack(spacing: Spacing.xs) {
-                Text("Choose Your Interests")
+                Text("onboarding.categories.title".localized)
                     .font(.displayMedium)
                     .foregroundColor(.textPrimary)
 
-                Text("Select topics you'd like to learn about")
+                Text("onboarding.categories.subtitle".localized)
                     .font(.bodyMedium)
                     .foregroundColor(.textSecondary)
                     .multilineTextAlignment(.center)
@@ -51,12 +51,14 @@ struct CategorySelectionView: View {
 
             // Selection info and continue button
             VStack(spacing: Spacing.md) {
-                Text(selectedCategories.isEmpty ? "Select at least one category" : "\(selectedCategories.count) selected")
+                Text(selectedCategories.isEmpty
+                    ? "onboarding.categories.selectAtLeastOne".localized
+                    : String(format: "onboarding.categories.selectedCount".localized, selectedCategories.count))
                     .font(.bodySmall)
                     .foregroundColor(.textSecondary)
 
                 PrimaryButton(
-                    title: "Continue",
+                    title: "onboarding.categories.continue".localized,
                     action: onContinue
                 )
                 .disabled(selectedCategories.isEmpty)

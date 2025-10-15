@@ -28,6 +28,8 @@
 "error.unknown.title" = "哎呀！";
 "loading" = "加载中...";
 "onboarding.categories.continue" = "继续";
+"onboarding.categories.selectAtLeastOne" = "至少选择一个分类";
+"onboarding.categories.selectedCount" = "已选择 %d 个";
 "onboarding.categories.subtitle" = "选择您想探索的主题";
 "onboarding.categories.title" = "选择您的兴趣";
 "onboarding.goal.cardsPerDay" = "每天 %d 张卡片";
@@ -85,3 +87,9 @@
 "subscription.subtitle" = "获取无限知识卡片";
 "subscription.terms" = "使用条款";
 "subscription.title" = "解锁完整访问";
+"onboarding.feature.learnDaily.description" = "每天发现新的知识卡片";
+"onboarding.feature.learnDaily.title" = "每日学习";
+"onboarding.feature.testYourself.description" = "通过互动测验巩固学习";
+"onboarding.feature.testYourself.title" = "自我测试";
+"onboarding.feature.trackProgress.description" = "建立连胜记录并赢得成就";
+"onboarding.feature.trackProgress.title" = "跟踪进度";

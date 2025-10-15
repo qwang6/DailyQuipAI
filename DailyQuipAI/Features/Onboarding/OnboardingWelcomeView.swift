@@ -22,11 +22,11 @@ struct OnboardingWelcomeView: View {
                     .foregroundStyle(LinearGradient.brand)
 
                 VStack(spacing: Spacing.xs) {
-                    Text("Welcome to DailyQuipAI")
+                    Text("onboarding.welcome.title".localized)
                         .font(.displayLarge)
                         .foregroundColor(.textPrimary)
 
-                    Text("Your daily dose of knowledge")
+                    Text("onboarding.welcome.subtitle".localized)
                         .font(.bodyLarge)
                         .foregroundColor(.textSecondary)
                 }
@@ -38,20 +38,20 @@ struct OnboardingWelcomeView: View {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 OnboardingFeatureRow(
                     icon: "book.fill",
-                    title: "Learn Daily",
-                    description: "Discover new knowledge cards every day"
+                    title: "onboarding.feature.learnDaily.title".localized,
+                    description: "onboarding.feature.learnDaily.description".localized
                 )
 
                 OnboardingFeatureRow(
                     icon: "brain.head.profile",
-                    title: "Test Yourself",
-                    description: "Reinforce learning with interactive quizzes"
+                    title: "onboarding.feature.testYourself.title".localized,
+                    description: "onboarding.feature.testYourself.description".localized
                 )
 
                 OnboardingFeatureRow(
                     icon: "chart.line.uptrend.xyaxis",
-                    title: "Track Progress",
-                    description: "Build streaks and earn achievements"
+                    title: "onboarding.feature.trackProgress.title".localized,
+                    description: "onboarding.feature.trackProgress.description".localized
                 )
             }
             .padding(.horizontal, Spacing.xl)
@@ -59,7 +59,7 @@ struct OnboardingWelcomeView: View {
             Spacer()
 
             // CTA button
-            PrimaryButton(title: "Get Started", action: onContinue)
+            PrimaryButton(title: "onboarding.welcome.getStarted".localized, action: onContinue)
                 .padding(.horizontal, Spacing.xl)
                 .paddingVertical()
         }
