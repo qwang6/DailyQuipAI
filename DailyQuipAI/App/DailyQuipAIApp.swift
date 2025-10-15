@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct DailyQuipAIApp: App {
+    @StateObject private var languageManager = LanguageManager.shared
+
     var body: some Scene {
         WindowGroup {
             AppCoordinator()
+                .environment(\.languageManager, languageManager)
+                .environmentObject(languageManager)
         }
     }
 }

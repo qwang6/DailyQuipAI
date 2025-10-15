@@ -440,20 +440,21 @@ struct CardBackView: View {
 
                 // Content with glass background
                 ScrollView {
-                    Text(card.backContent)
-                        .font(.system(size: DeviceSize.cardBodySize, weight: .regular, design: .rounded))
-                        .foregroundColor(.primary.opacity(0.9))
-                        .lineSpacing(6)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                                )
-                        )
+                    EnhancedMarkdownText(
+                        card.backContent,
+                        fontSize: DeviceSize.cardBodySize,
+                        lineSpacing: 6
+                    )
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            )
+                    )
                 }
 
                 Spacer()

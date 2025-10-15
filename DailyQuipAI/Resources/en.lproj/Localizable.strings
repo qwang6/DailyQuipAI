@@ -1,0 +1,116 @@
+/*
+  Localizable.strings (English)
+  DailyQuipAI
+*/
+
+/* General */
+"app.name" = "DailyQuipAI";
+"done" = "Done";
+"cancel" = "Cancel";
+"save" = "Save";
+"retry" = "Retry";
+"error" = "Error";
+"loading" = "Loading...";
+
+/* Daily Cards */
+"dailyCards.title" = "Daily Knowledge Cards";
+"dailyCards.card.progress" = "Card %d of %d";
+"dailyCards.swipe.learn" = "Learn";
+"dailyCards.swipe.save" = "Save";
+"dailyCards.swipe.next" = "Next";
+"dailyCards.swipe.instructions" = "Swipe Instructions";
+"dailyCards.empty.noCards.title" = "No Cards in This Category";
+"dailyCards.empty.noCards.message" = "Switch to 'All' to see your available cards.";
+"dailyCards.empty.completed.title" = "All Done!";
+"dailyCards.empty.completed.message" = "You've completed today's knowledge cards. Great job!";
+"dailyCards.empty.completed.action" = "Review Saved Cards";
+
+/* Settings */
+"settings.title" = "Settings";
+"settings.section.content" = "Content";
+"settings.section.learning" = "Learning";
+"settings.section.notifications" = "Notifications";
+"settings.section.appearance" = "Appearance";
+"settings.section.language" = "Language";
+"settings.section.about" = "About";
+
+"settings.categories.title" = "Preferred Categories";
+"settings.categories.count" = "%d selected";
+"settings.categories.navigation" = "Categories";
+"settings.categories.description" = "Select the topics you'd like to learn about. You need at least one category selected.";
+
+"settings.dailyGoal.title" = "Daily Goal";
+"settings.dailyGoal.count" = "%d cards per day";
+
+"settings.notifications.title" = "Daily Reminders";
+"settings.notifications.time" = "Reminder Time";
+
+"settings.theme.title" = "Theme";
+"settings.theme.light" = "Light";
+"settings.theme.dark" = "Dark";
+"settings.theme.system" = "System";
+
+"settings.language.title" = "Language";
+"settings.language.english" = "English";
+"settings.language.chinese" = "简体中文";
+
+"settings.version" = "Version";
+"settings.privacy" = "Privacy Policy";
+"settings.terms" = "Terms of Service";
+
+/* Categories */
+"category.all" = "All";
+"category.history" = "History";
+"category.science" = "Science";
+"category.art" = "Art";
+"category.life" = "Life";
+"category.finance" = "Finance";
+"category.philosophy" = "Philosophy";
+
+/* Onboarding */
+"onboarding.welcome.title" = "Welcome to DailyQuipAI";
+"onboarding.welcome.subtitle" = "Learn something new every day";
+"onboarding.welcome.getStarted" = "Get Started";
+
+"onboarding.categories.title" = "Choose Your Interests";
+"onboarding.categories.subtitle" = "Select topics you'd like to explore";
+"onboarding.categories.continue" = "Continue";
+
+"onboarding.goal.title" = "Set Your Daily Goal";
+"onboarding.goal.subtitle" = "How many cards would you like per day?";
+"onboarding.goal.cardsPerDay" = "%d cards per day";
+"onboarding.goal.continue" = "Continue";
+
+"onboarding.notifications.title" = "Stay on Track";
+"onboarding.notifications.subtitle" = "Get daily reminders to learn";
+"onboarding.notifications.enable" = "Enable Notifications";
+"onboarding.notifications.skip" = "Maybe Later";
+
+/* Subscription */
+"subscription.title" = "Unlock Full Access";
+"subscription.subtitle" = "Get unlimited knowledge cards";
+"subscription.feature.unlimited" = "Unlimited daily cards";
+"subscription.feature.categories" = "All categories";
+"subscription.feature.offline" = "Offline access";
+"subscription.feature.adFree" = "Ad-free experience";
+
+"subscription.monthly" = "Monthly";
+"subscription.annual" = "Annual";
+"subscription.lifetime" = "Lifetime";
+"subscription.price.monthly" = "$0.99/month";
+"subscription.price.annual" = "$7.99/year";
+"subscription.price.lifetime" = "$12.99";
+"subscription.savings.annual" = "Save 17%";
+"subscription.bestValue" = "Best Value";
+
+"subscription.restore" = "Restore Purchase";
+"subscription.terms" = "Terms of Use";
+"subscription.privacy" = "Privacy Policy";
+
+/* Error Messages */
+"error.network.title" = "Connection Error";
+"error.network.message" = "Please check your internet connection and try again.";
+"error.server.title" = "Server Error";
+"error.server.message" = "Something went wrong. Please try again later.";
+"error.unknown.title" = "Oops!";
+"error.unknown.message" = "An unexpected error occurred.";

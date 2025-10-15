@@ -11,69 +11,12 @@ import Combine
 /// Settings view for app configuration
 struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
-    @StateObject private var subscriptionManager = SubscriptionManager.shared
+    @ObservedObject private var languageManager = LanguageManager.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showPaywall = false
 
     var body: some View {
         NavigationView {
             List {
-                // Subscription Section
-                Section {
-                    HStack {
-                        Image(systemName: subscriptionManager.isPremium ? "crown.fill" : "star.fill")
-                            .foregroundStyle(LinearGradient.brand)
-                            .frame(width: 28)
-
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            // Display subscription type name
-                            Text(subscriptionTypeName)
-                                .font(.bodyMedium)
-                                .foregroundColor(.textPrimary)
-
-                            // Display subscription details
-                            Text(subscriptionDetails)
-                                .font(.captionLarge)
-                                .foregroundColor(.textSecondary)
-                        }
-
-                        Spacer()
-
-                        if !subscriptionManager.isPremium {
-                            Button("Upgrade") {
-                                showPaywall = true
-                            }
-                            .font(.labelMedium)
-                            .foregroundColor(.brandPrimary)
-                        }
-                    }
-
-                    // Restore Purchases Button
-                    Button {
-                        Task {
-                            await restorePurchases()
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.brandPrimary)
-                                .frame(width: 28)
-
-                            Text("Restore Purchases")
-                                .font(.bodyMedium)
-                                .foregroundColor(.textPrimary)
-
-                            Spacer()
-                        }
-                    }
-                } header: {
-                    Text("Subscription")
-                } footer: {
-                    Text("Already purchased? Tap 'Restore Purchases' to restore your subscription.")
-                        .font(.captionLarge)
-                        .foregroundColor(.textSecondary)
-                }
-
                 // Category Preferences Section
                 Section {
                     NavigationLink(destination: CategoryPreferencesView(
@@ -85,18 +28,18 @@ struct SettingsView: View {
                                 .frame(width: 28)
 
                             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                                Text("Preferred Categories")
+                                Text("settings.categories.title".localized)
                                     .font(.bodyMedium)
                                     .foregroundColor(.textPrimary)
 
-                                Text("\(viewModel.selectedCategories.count) selected")
+                                Text("settings.categories.count".localized(viewModel.selectedCategories.count))
                                     .font(.captionLarge)
                                     .foregroundColor(.textSecondary)
                             }
                         }
                     }
                 } header: {
-                    Text("Content")
+                    Text("settings.section.content".localized)
                 }
 
                 // Learning Goals Section
@@ -107,11 +50,11 @@ struct SettingsView: View {
                             .frame(width: 28)
 
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text("Daily Goal")
+                            Text("settings.dailyGoal.title".localized)
                                 .font(.bodyMedium)
                                 .foregroundColor(.textPrimary)
 
-                            Text("\(viewModel.dailyGoal) cards per day")
+                            Text("settings.dailyGoal.count".localized(viewModel.dailyGoal))
                                 .font(.captionLarge)
                                 .foregroundColor(.textSecondary)
                         }
@@ -122,7 +65,7 @@ struct SettingsView: View {
                             .labelsHidden()
                     }
                 } header: {
-                    Text("Learning")
+                    Text("settings.section.learning".localized)
                 }
 
                 // Notifications Section
@@ -133,7 +76,7 @@ struct SettingsView: View {
                                 .foregroundStyle(LinearGradient.brand)
                                 .frame(width: 28)
 
-                            Text("Daily Reminders")
+                            Text("settings.notifications.title".localized)
                                 .font(.bodyMedium)
                                 .foregroundColor(.textPrimary)
                         }
@@ -141,19 +84,19 @@ struct SettingsView: View {
 
                     if viewModel.notificationsEnabled {
                         DatePicker(
-                            "Reminder Time",
+                            "settings.notifications.time".localized,
                             selection: $viewModel.reminderTime,
                             displayedComponents: .hourAndMinute
                         )
                         .font(.bodyMedium)
                     }
                 } header: {
-                    Text("Notifications")
+                    Text("settings.section.notifications".localized)
                 }
 
                 // Appearance Section
                 Section {
-                    Picker("Theme", selection: $viewModel.theme) {
+                    Picker("settings.theme.title".localized, selection: $viewModel.theme) {
                         ForEach(Theme.allCases, id: \.self) { theme in
                             Text(theme.displayName)
                                 .tag(theme)
@@ -161,13 +104,28 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                 } header: {
-                    Text("Appearance")
+                    Text("settings.section.appearance".localized)
+                }
+
+                // Language Section
+                Section {
+                    Picker("settings.language.title".localized, selection: $languageManager.currentLanguage) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.displayName)
+                                .tag(language)
+                        }
+                    }
+                    .onChange(of: languageManager.currentLanguage) { newLanguage in
+                        languageManager.changeLanguage(to: newLanguage)
+                    }
+                } header: {
+                    Text("settings.section.language".localized)
                 }
 
                 // About Section
                 Section {
                     HStack {
-                        Text("Version")
+                        Text("settings.version".localized)
                             .font(.bodyMedium)
                         Spacer()
                         Text("1.0.0")
@@ -176,90 +134,27 @@ struct SettingsView: View {
                     }
 
                     Link(destination: URL(string: "https://gleam.app/privacy")!) {
-                        Text("Privacy Policy")
+                        Text("settings.privacy".localized)
                             .font(.bodyMedium)
                     }
 
                     Link(destination: URL(string: "https://gleam.app/terms")!) {
-                        Text("Terms of Service")
+                        Text("settings.terms".localized)
                             .font(.bodyMedium)
                     }
                 } header: {
-                    Text("About")
+                    Text("settings.section.about".localized)
                 }
             }
-            .navigationTitle("Settings")
-            .fullScreenCover(isPresented: $showPaywall) {
-                PaywallView(
-                    onUpgrade: { subscriptionType in
-                        // Handle subscription upgrade
-                        subscriptionManager.updateSubscription(to: subscriptionType)
-                        showPaywall = false
-                    },
-                    onDismiss: {
-                        showPaywall = false
-                    }
-                )
-            }
+            .navigationTitle("settings.title".localized)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                    Button("done".localized) {
                         dismiss()
                     }
                 }
             }
-        }
-    }
-
-    // MARK: - Subscription Display
-
-    /// Get display name for current subscription type
-    private var subscriptionTypeName: String {
-        switch subscriptionManager.subscriptionType {
-        case .free:
-            return "Free"
-        case .monthly:
-            return "Premium Monthly"
-        case .annual:
-            return "Premium Annual"
-        case .lifetime:
-            return "Premium Lifetime"
-        }
-    }
-
-    /// Get details text for current subscription
-    private var subscriptionDetails: String {
-        switch subscriptionManager.subscriptionType {
-        case .free:
-            if let remaining = subscriptionManager.remainingCardsToday {
-                return "\(remaining) cards remaining today"
-            }
-            return "5 cards per day"
-        case .monthly:
-            return "Unlimited cards • $0.99/month"
-        case .annual:
-            return "Unlimited cards • $7.99/year"
-        case .lifetime:
-            return "Unlimited cards • One-time purchase"
-        }
-    }
-
-    // MARK: - Restore Purchases
-
-    /// Restore previously purchased subscriptions
-    private func restorePurchases() async {
-        do {
-            let restored = try await subscriptionManager.restorePurchases()
-            if restored {
-                // Show success message
-                print("✅ Purchases restored successfully")
-            } else {
-                // Show "no purchases found" message
-                print("ℹ️ No purchases to restore")
-            }
-        } catch {
-            print("❌ Failed to restore purchases: \(error)")
         }
     }
 }
@@ -277,7 +172,7 @@ struct CategoryPreferencesView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Spacing.lg) {
-                Text("Select the topics you'd like to learn about. You need at least one category selected.")
+                Text("settings.categories.description".localized)
                     .font(.bodyMedium)
                     .foregroundColor(.textSecondary)
                     .multilineTextAlignment(.center)
@@ -297,7 +192,7 @@ struct CategoryPreferencesView: View {
                 .padding(.horizontal, Spacing.xl)
             }
         }
-        .navigationTitle("Categories")
+        .navigationTitle("settings.categories.navigation".localized)
         .navigationBarTitleDisplayMode(.inline)
     }
 

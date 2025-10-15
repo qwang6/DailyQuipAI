@@ -18,6 +18,24 @@ enum Category: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Localized display name
+    var displayName: String {
+        switch self {
+        case .history:
+            return "category.history".localized
+        case .science:
+            return "category.science".localized
+        case .art:
+            return "category.art".localized
+        case .life:
+            return "category.life".localized
+        case .finance:
+            return "category.finance".localized
+        case .philosophy:
+            return "category.philosophy".localized
+        }
+    }
+
     /// SF Symbol icon name for this category
     var icon: String {
         switch self {

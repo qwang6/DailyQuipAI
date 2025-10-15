@@ -43,19 +43,36 @@ class LoadingTipsGenerator {
         let tips = cards.map { card -> String in
             // Use the title as the tip, or extract first sentence from backContent
             if !card.title.isEmpty && card.title.count < 100 {
-                return card.title
+                return stripMarkdown(card.title)
             } else if let firstSentence = card.backContent.components(separatedBy: ".").first,
                       firstSentence.count < 100 {
-                return firstSentence + "."
+                return stripMarkdown(firstSentence) + "."
             } else {
                 // If content is too long, take first 80 chars
                 let truncated = String(card.backContent.prefix(80))
-                return truncated + "..."
+                return stripMarkdown(truncated) + "..."
             }
         }
 
         print("✅ Generated \(tips.count) tips from LLM cards")
         return tips
+    }
+
+    /// Remove Markdown formatting from text for plain display
+    private func stripMarkdown(_ text: String) -> String {
+        var cleaned = text
+        // Remove headers (##, ###, etc.)
+        cleaned = cleaned.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: #"\n#{1,6}\s+"#, with: "\n", options: .regularExpression)
+        // Remove bold (**text**)
+        cleaned = cleaned.replacingOccurrences(of: #"\*\*([^\*]+)\*\*"#, with: "$1", options: .regularExpression)
+        // Remove italic (*text*)
+        cleaned = cleaned.replacingOccurrences(of: #"\*([^\*]+)\*"#, with: "$1", options: .regularExpression)
+        // Remove code (`text`)
+        cleaned = cleaned.replacingOccurrences(of: #"`([^`]+)`"#, with: "$1", options: .regularExpression)
+        // Remove extra whitespace
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned
     }
 
 }
@@ -64,7 +81,7 @@ class LoadingTipsGenerator {
 @MainActor
 class LoadingTipsManager: ObservableObject {
 
-    @Published var currentTip: String = "Loading your knowledge cards..."
+    @Published var currentTip: String = "loading".localized
     @Published var tips: [String] = []
 
     private var currentIndex: Int = 0
@@ -105,15 +122,18 @@ class LoadingTipsManager: ObservableObject {
             // Update on main actor to ensure UI updates
             await MainActor.run {
                 let wasEmpty = self.tips.isEmpty
-                self.tips.append(contentsOf: newTips)
 
-                // If this is the first batch, show the first tip immediately
-                if wasEmpty && !newTips.isEmpty {
+                // ALWAYS REPLACE old tips with new tips for freshness
+                // Keep only the new batch, discard old tips
+                self.tips = newTips
+                self.currentIndex = 0
+
+                // Show the first tip immediately
+                if !newTips.isEmpty {
                     self.currentTip = newTips[0]
-                    self.currentIndex = 0
                     print("💡 Displaying first tip immediately: \(newTips[0])")
                 }
-                print("✅ Fetched \(newTips.count) tips, total now: \(self.tips.count)")
+                print("✅ Fetched \(newTips.count) tips, replaced old batch")
             }
         } catch {
             print("❌ Failed to fetch tips from LLM: \(error)")

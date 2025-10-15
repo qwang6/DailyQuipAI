@@ -18,11 +18,11 @@ struct DailyCardsView: View {
             // Header
             HStack {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text("DailyQuipAI")
+                    Text("app.name".localized)
                         .font(.displayMedium)
                         .foregroundColor(.brandPrimary)
 
-                    Text("Daily Knowledge Cards")
+                    Text("dailyCards.title".localized)
                         .font(.bodyMedium)
                         .foregroundColor(.textSecondary)
                 }
@@ -68,11 +68,14 @@ struct DailyCardsView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if viewModel.hasMoreCards, let card = viewModel.currentCard {
+                } else if viewModel.hasMoreCards {
+                    // We have more cards (or loading next batch)
+                    if let card = viewModel.currentCard {
+                        // Card is available - show it
                     VStack(spacing: Spacing.md) {
                         // Progress indicator
                         VStack(spacing: Spacing.xs) {
-                            Text("Card \(viewModel.currentCardIndex + 1) of \(viewModel.totalCards)")
+                            Text("dailyCards.card.progress".localized(viewModel.currentCardIndex + 1, viewModel.totalCards))
                                 .font(.labelMedium)
                                 .foregroundColor(.textSecondary)
 
@@ -113,27 +116,33 @@ struct DailyCardsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, Spacing.md)
                     .padding(.bottom, Spacing.lg)
+                    } else {
+                        // Loading next batch - show loading view
+                        LoadingView(
+                            withRotatingTips: true,
+                            llmGenerator: viewModel.llmGeneratorInstance
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
-                    // No cards available or all cards completed
+                    // No more cards - all cards completed
                     if viewModel.cards.isEmpty && viewModel.selectedCategory != nil {
-                        // Free user selected a category with no cards
+                        // User selected a category with no cards
                         EmptyStateView(
                             icon: "sparkles",
-                            title: "No Cards in This Category",
-                            message: "Switch to 'All' to see your available cards, or upgrade to Premium for unlimited access to all categories.",
-                            actionTitle: "Upgrade to Premium",
-                            action: {
-                                viewModel.showPaywall = true
-                            }
+                            title: "dailyCards.empty.noCards.title".localized,
+                            message: "dailyCards.empty.noCards.message".localized,
+                            actionTitle: nil,
+                            action: {}
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         // All cards completed
                         EmptyStateView(
                             icon: "checkmark.circle.fill",
-                            title: "All Done!",
-                            message: "You've completed today's knowledge cards. Great job!",
-                            actionTitle: "Review Saved Cards",
+                            title: "dailyCards.empty.completed.title".localized,
+                            message: "dailyCards.empty.completed.message".localized,
+                            actionTitle: "dailyCards.empty.completed.action".localized,
                             action: {
                                 // Navigate to saved cards
                             }
@@ -147,30 +156,6 @@ struct DailyCardsView: View {
         .background(Color.backgroundPrimary.ignoresSafeArea())
         .sheet(isPresented: $showSettings) {
             SettingsView()
-        }
-        .sheet(isPresented: $viewModel.showPaywall) {
-            PaywallView(
-                onUpgrade: { subscriptionType in
-                    print("💳 Paywall - User selected: \(subscriptionType.rawValue)")
-                    // Handle subscription upgrade
-                    SubscriptionManager.shared.updateSubscription(to: subscriptionType)
-                    viewModel.showPaywall = false
-                    print("✅ Paywall dismissed after upgrade")
-                },
-                onDismiss: {
-                    print("❌ Paywall - User dismissed without upgrading")
-                    // User dismissed without upgrading - keep them on current card
-                    viewModel.showPaywall = false
-                    print("📍 Current card index after dismiss: \(viewModel.currentCardIndex)")
-                    print("📚 Total cards available: \(viewModel.cards.count)")
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.hidden)
-            .interactiveDismissDisabled(false)
-        }
-        .onChange(of: viewModel.showPaywall) {
-            print("🎬 Paywall state changed to: \(viewModel.showPaywall)")
         }
         .task {
             await viewModel.fetchDailyCards()
@@ -191,7 +176,7 @@ struct CategoryFilterBar: View {
                 // Category buttons
                 ForEach(Category.allCases) { category in
                     CategoryFilterChip(
-                        title: category.rawValue,
+                        title: category.displayName,
                         icon: category.icon,
                         category: category,
                         isSelected: isHighlighted(category),
@@ -289,14 +274,14 @@ struct CategoryFilterChip: View {
 struct SwipeInstructions: View {
     var body: some View {
         VStack(spacing: Spacing.xs) {
-            Text("Swipe Instructions")
+            Text("dailyCards.swipe.instructions".localized)
                 .font(.labelMedium)
                 .foregroundColor(.textSecondary)
 
             HStack(spacing: Spacing.xl) {
-                SwipeInstruction(icon: "arrow.left", label: "Learn")
-                SwipeInstruction(icon: "arrow.right", label: "Save")
-                SwipeInstruction(icon: "arrow.up", label: "Next")
+                SwipeInstruction(icon: "arrow.left", label: "dailyCards.swipe.learn".localized)
+                SwipeInstruction(icon: "arrow.right", label: "dailyCards.swipe.save".localized)
+                SwipeInstruction(icon: "arrow.up", label: "dailyCards.swipe.next".localized)
             }
         }
         .paddingVertical()

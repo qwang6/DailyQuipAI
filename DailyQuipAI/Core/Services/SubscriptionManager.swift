@@ -115,18 +115,12 @@ class SubscriptionManager: ObservableObject {
 
     /// Check if user can view more cards today
     var canViewMoreCards: Bool {
-        guard let limit = subscriptionType.dailyCardLimit else {
-            return true  // Premium users have no limit
-        }
-        return cardsViewedToday < limit
+        return true  // No limits - completely free app
     }
 
     /// Get remaining cards for today
     var remainingCardsToday: Int? {
-        guard let limit = subscriptionType.dailyCardLimit else {
-            return nil  // Premium users have no limit
-        }
-        return max(0, limit - cardsViewedToday)
+        return nil  // No limits - completely free app
     }
 
     /// Increment cards viewed count

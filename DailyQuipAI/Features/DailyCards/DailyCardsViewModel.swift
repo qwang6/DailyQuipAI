@@ -19,7 +19,6 @@ class DailyCardsViewModel: ObservableObject {
     @Published var error: Error?
     @Published var showError: Bool = false
     @Published var selectedCategory: Category?  // nil = all categories
-    @Published var showPaywall: Bool = false  // Show upgrade prompt
 
     // MARK: - Cache Keys
 
@@ -33,6 +32,7 @@ class DailyCardsViewModel: ObservableObject {
 
     private var isPrefetching: Bool = false
     private var nextBatchCards: [Card] = []
+    private var isLoadingNextBatch: Bool = false  // Track if we're loading the next batch
 
     // MARK: - Category-based Storage
 
@@ -51,7 +51,11 @@ class DailyCardsViewModel: ObservableObject {
     }
 
     var hasMoreCards: Bool {
-        currentCardIndex < cards.count
+        // In a free app with unlimited LLM generation, we ALWAYS have more cards
+        // The only case where we don't is if we're still on existing cards
+        // When currentCardIndex >= cards.count, we'll trigger loadNextBatch
+        // So hasMoreCards should always be true (we can always generate more)
+        return true
     }
 
     var progress: Double {
@@ -100,7 +104,7 @@ class DailyCardsViewModel: ObservableObject {
             apiClient: URLSessionAPIClient(baseURL: baseURL),
             cardRepository: UserDefaultsCardRepository(),
             userRepository: UserDefaultsUserRepository(),
-            llmGenerator: LLMCardGenerator(apiKey: apiKey, provider: .gemini)
+            llmGenerator: LLMCardGenerator(apiKey: apiKey, provider: .gemini, modelName: "gemini-2.5-flash-lite")
         )
     }
 
@@ -140,25 +144,17 @@ class DailyCardsViewModel: ObservableObject {
                 print("📚 Switching to category \(category.rawValue): \(existingCards.count) existing cards")
                 cards = existingCards
 
-                // Free users: Don't fetch more cards per category
-                // Premium users: Can fetch more if needed
-                if existingCards.count < 5 && subscriptionManager.isPremium {
+                // Fetch more cards if needed
+                if existingCards.count < 5 {
                     print("⚠️ Low card count for \(category.rawValue), fetching more...")
                     await fetchCardsForCategory(category)
-                } else if existingCards.count < 5 && !subscriptionManager.isPremium {
-                    print("📌 Free user: Using existing \(existingCards.count) cards for \(category.rawValue)")
                 }
             } else {
-                // No cards for this category
-                if subscriptionManager.isPremium {
-                    // Premium users: fetch new batch
-                    print("📭 No cards for \(category.rawValue), fetching new batch...")
-                    await fetchCardsForCategory(category)
-                } else {
-                    // Free users: show empty or tell them to use "All" view
-                    print("📭 Free user: No cards for \(category.rawValue). Use 'All' to see available cards.")
-                    cards = []
-                }
+                // No cards for this category - set loading state and fetch new batch
+                print("📭 No cards for \(category.rawValue), fetching new batch...")
+                cards = []  // Ensure cards is empty
+                isLoading = true  // Set loading before async call
+                await fetchCardsForCategory(category)
             }
         } else {
             // Show all categories
@@ -167,8 +163,10 @@ class DailyCardsViewModel: ObservableObject {
     }
 
     /// Fetch cards specifically for a category and append to existing
-    private func fetchCardsForCategory(_ category: Category) async {
-        isLoading = true
+    private func fetchCardsForCategory(_ category: Category, isAppendingBatch: Bool = false) async {
+        if !isAppendingBatch {
+            isLoading = true
+        }
         error = nil
 
         do {
@@ -184,18 +182,28 @@ class DailyCardsViewModel: ObservableObject {
 
             // Append to existing cards for this category
             var existingCards = allCardsByCategory[category] ?? []
+            let oldCount = existingCards.count
             existingCards.append(contentsOf: newCards)
             allCardsByCategory[category] = existingCards
 
-            // Update displayed cards
-            cards = existingCards
-            currentCardIndex = 0
+            // Update displayed cards on main actor to ensure UI updates
+            await MainActor.run {
+                if isAppendingBatch {
+                    // When appending, update cards but don't reset index
+                    self.cards = existingCards
+                    print("📍 Keeping card index at \(self.currentCardIndex), cards now: \(existingCards.count)")
+                } else {
+                    // When switching category, reset to first card
+                    self.cards = existingCards
+                    self.currentCardIndex = 0
+                }
+                self.isLoading = false
+            }
 
             // Save to cache
             saveCategoryCards()
 
-            print("✅ Fetched \(newCards.count) new cards for \(category.rawValue), total: \(existingCards.count)")
-            isLoading = false
+            print("✅ Fetched \(newCards.count) new cards for \(category.rawValue), was: \(oldCount), now: \(existingCards.count)")
 
         } catch {
             self.error = error
@@ -217,7 +225,8 @@ class DailyCardsViewModel: ObservableObject {
     }
 
     /// Apply category filter to displayed cards
-    private func applyFilter() {
+    /// - Parameter resetIndex: Whether to reset currentCardIndex to 0 (default true)
+    private func applyFilter(resetIndex: Bool = true) {
         if let category = selectedCategory {
             cards = allCardsByCategory[category] ?? []
             print("🔍 Filtered to \(category.rawValue): \(cards.count) cards")
@@ -226,11 +235,17 @@ class DailyCardsViewModel: ObservableObject {
             cards = allCardsByCategory.values.flatMap { $0 }
             print("🔍 Showing all cards: \(cards.count) total")
         }
-        currentCardIndex = 0
+        if resetIndex {
+            currentCardIndex = 0
+            print("🔄 Reset card index to 0")
+        } else {
+            print("📍 Keeping card index at \(currentCardIndex)")
+        }
     }
 
     /// Force fetch new cards from LLM - fetches for all selected categories
-    private func fetchNewCards() async {
+    /// - Parameter isAppendingBatch: True if appending to existing cards (don't reset index), false for fresh load
+    private func fetchNewCards(isAppendingBatch: Bool = false) async {
         isLoading = true
         error = nil
 
@@ -239,15 +254,10 @@ class DailyCardsViewModel: ObservableObject {
             let dailyGoal = UserDefaults.standard.integer(forKey: "dailyGoal")
 
             // For free users: enforce 5 card limit regardless of settings
-            // For premium users: use their daily goal setting
-            let cardCount: Int
-            if subscriptionManager.isPremium {
-                cardCount = dailyGoal > 0 ? dailyGoal : 5
-            } else {
-                cardCount = 5  // Free users always get 5 cards
-            }
+            // Use daily goal setting for all users
+            let cardCount = dailyGoal > 0 ? dailyGoal : 5
 
-            print("🔄 Fetching \(cardCount) new cards from LLM (isPremium: \(subscriptionManager.isPremium))...")
+            print("🔄 Fetching \(cardCount) new cards from LLM...")
 
             // Generate cards using LLM (single batch request)
             let newCards = try await llmGenerator.generateDailyCards(
@@ -263,7 +273,8 @@ class DailyCardsViewModel: ObservableObject {
             }
 
             // Apply filter to set displayed cards
-            applyFilter()
+            // If appending, don't reset index - continue from current position
+            applyFilter(resetIndex: !isAppendingBatch)
 
             // Save to cache
             saveCategoryCards()
@@ -271,13 +282,9 @@ class DailyCardsViewModel: ObservableObject {
             print("✅ Fetched and cached \(newCards.count) cards across \(allCardsByCategory.keys.count) categories")
             isLoading = false
 
-            // Start prefetching next batch (only for premium users)
-            if subscriptionManager.isPremium {
-                Task {
-                    await prefetchNextBatch()
-                }
-            } else {
-                print("⏭️ Skipping prefetch - free user has reached daily limit")
+            // Start prefetching next batch
+            Task {
+                await prefetchNextBatch()
             }
 
         } catch {
@@ -341,21 +348,14 @@ class DailyCardsViewModel: ObservableObject {
         print("   - isNewCard: \(isNewCard)")
         print("   - dailyCardLimit: \(subscriptionManager.dailyCardLimit?.description ?? "unlimited")")
         print("   - canViewMoreCards: \(subscriptionManager.canViewMoreCards)")
-        print("   - isPremium: \(subscriptionManager.isPremium)")
 
-        // Only check limit if user is trying to view a NEW card
-        if isNewCard && !subscriptionManager.canViewMoreCards {
-            print("🚫 Free user reached daily limit - showing paywall")
-            print("   - Cards viewed today: \(subscriptionManager.cardsViewedToday)")
-            print("   - Daily limit: \(subscriptionManager.dailyCardLimit ?? 999)")
-            showPaywall = true
-            return
-        }
+        // No limits - completely free app
+        // Removed paywall logic
 
-        // Increment viewed count ONLY for NEW cards
+        // Track viewed count for statistics only
         if isNewCard {
             subscriptionManager.incrementCardsViewed()
-            print("✅ Incremented card view count to: \(subscriptionManager.cardsViewedToday)")
+            print("✅ Card viewed count: \(subscriptionManager.cardsViewedToday)")
         } else {
             print("⏪ Reviewing previous card - no increment")
         }
@@ -370,15 +370,17 @@ class DailyCardsViewModel: ObservableObject {
             // When all cards in current batch are viewed, load next batch
             if currentCardIndex >= cards.count {
                 print("🎉 All cards in current batch viewed!")
-                loadNextBatch()
+                Task {
+                    await loadNextBatch()
+                }
             } else {
                 // Update cache to track progress
                 updateCacheAfterViewing()
 
-                // Prefetch next batch when user is on second-to-last card (premium only)
+                // Prefetch next batch when user is on second-to-last card
                 let cardsRemaining = cards.count - currentCardIndex
                 print("📊 Cards remaining: \(cardsRemaining)")
-                if cardsRemaining == 1 && !isPrefetching && subscriptionManager.isPremium {
+                if cardsRemaining == 1 && !isPrefetching {
                     print("🔮 Triggering prefetch for next batch")
                     Task {
                         await prefetchNextBatch()
@@ -410,32 +412,65 @@ class DailyCardsViewModel: ObservableObject {
     }
 
     /// Load the next batch of cards (from prefetch or fetch new)
-    private func loadNextBatch() {
-        // Free users should not load next batch - show paywall instead
-        if !subscriptionManager.isPremium {
-            print("🚫 Free user reached end of daily cards - showing paywall")
-            showPaywall = true
-            return
-        }
+    private func loadNextBatch() async {
+        // No limits - completely free app
+        // Removed paywall logic
+
+        // Mark that we're loading to prevent showing "completed" screen
+        isLoadingNextBatch = true
+        print("🔄 Started loading next batch...")
 
         if !nextBatchCards.isEmpty {
             print("📦 Loading prefetched next batch: \(nextBatchCards.count) cards")
-            cards = nextBatchCards
-            currentCardIndex = 0
+
+            // Append new cards to the corresponding categories
+            for card in nextBatchCards {
+                var categoryCards = allCardsByCategory[card.category] ?? []
+                categoryCards.append(card)
+                allCardsByCategory[card.category] = categoryCards
+            }
+
+            // Reapply filter to update displayed cards
+            if let category = selectedCategory {
+                cards = allCardsByCategory[category] ?? []
+                print("🔍 Updated \(category.rawValue): now \(cards.count) cards")
+            } else {
+                cards = allCardsByCategory.values.flatMap { $0 }
+                print("🔍 Updated all cards: now \(cards.count) total")
+            }
+
+            // DON'T reset to 0 - keep current index to continue from where we were
+            // User has already viewed oldCardsCount cards, now show the new ones
+            // currentCardIndex stays at oldCardsCount, which points to first new card
+            print("📍 Continuing from card index: \(currentCardIndex) (should be first new card)")
+
             nextBatchCards = []
             saveCategoryCards()
 
-            // Start prefetching the batch after that (premium only)
-            if subscriptionManager.isPremium {
-                Task {
-                    await prefetchNextBatch()
-                }
+            // Clear loading flag
+            isLoadingNextBatch = false
+            print("✅ Finished loading next batch")
+
+            // Start prefetching the next batch
+            Task {
+                await prefetchNextBatch()
             }
         } else {
             print("⚠️ No prefetched batch available, fetching new cards...")
-            Task {
-                await fetchNewCards()
+            // IMPORTANT: Wait for fetch to complete before returning
+            // This ensures cards array is updated before UI tries to display
+
+            // If user has selected a category, fetch cards for that category only
+            // Otherwise fetch for all selected categories
+            if let currentCategory = selectedCategory {
+                await fetchCardsForCategory(currentCategory, isAppendingBatch: true)
+            } else {
+                await fetchNewCards(isAppendingBatch: true)
             }
+
+            // Clear loading flag
+            isLoadingNextBatch = false
+            print("✅ Finished loading next batch")
         }
     }
 
@@ -450,21 +485,23 @@ class DailyCardsViewModel: ObservableObject {
         print("🔮 Prefetching next batch in background...")
 
         do {
-            let selectedCategories = getSelectedCategories()
             let dailyGoal = UserDefaults.standard.integer(forKey: "dailyGoal")
+            let cardCount = dailyGoal > 0 ? dailyGoal : 5
 
-            // For free users: enforce 5 card limit regardless of settings
-            // For premium users: use their daily goal setting
-            let cardCount: Int
-            if subscriptionManager.isPremium {
-                cardCount = dailyGoal > 0 ? dailyGoal : 5
+            // If user has selected a category, prefetch cards for that category only
+            // Otherwise prefetch for all selected categories
+            let categoriesToFetch: [Category]
+            if let currentCategory = selectedCategory {
+                categoriesToFetch = [currentCategory]
+                print("🔮 Prefetching for current category: \(currentCategory.rawValue)")
             } else {
-                cardCount = 5  // Free users always get 5 cards
+                categoriesToFetch = getSelectedCategories()
+                print("🔮 Prefetching for all selected categories")
             }
 
             // Generate next batch using LLM
             let prefetchedCards = try await llmGenerator.generateDailyCards(
-                categories: selectedCategories,
+                categories: categoriesToFetch,
                 count: cardCount
             )
 
