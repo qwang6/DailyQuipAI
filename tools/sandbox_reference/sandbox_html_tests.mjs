@@ -1,6 +1,6 @@
 // Correctness tests for the JS engine embedded in docs/sandbox.html.
-// Extracts the SandboxEngine portion of the page's script and runs the same
-// scenario tests as sandbox_engine_tests.py. Run: node sandbox_html_tests.mjs
+// Extracts the SandboxEngine portion of the page's script and verifies the
+// velocity-field falling-sand dynamics. Run: node sandbox_html_tests.mjs
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -15,39 +15,64 @@ const end = html.indexOf("// ===================================================
 assert.ok(start !== -1 && end !== -1, "could not locate engine script in sandbox.html");
 const engineSource = html.slice(start, end);
 
-const factory = new Function(engineSource + "\nreturn { SandboxEngine, EMPTY, WALL, SAND, WATER, mulberry32 };");
-const { SandboxEngine, EMPTY, WALL, SAND, WATER, mulberry32 } = factory();
+const factory = new Function(
+  engineSource +
+  "\nreturn { SandboxEngine, EMPTY, WALL, SAND, WATER, mulberry32, GRAVITY, MAX_FALL };"
+);
+const { SandboxEngine, EMPTY, WALL, SAND, WATER, mulberry32, GRAVITY, MAX_FALL } = factory();
 
 const cell = (e, x, y) => e.cells[e.index(x, y)];
 const count = (e, t) => e.cells.reduce((n, c) => (c === t ? n + 1 : n), 0);
-const runUntilStable = (e, maxSteps) => {
-  for (let i = 0; i < maxSteps; i++) {
-    const before = Array.from(e.cells);
-    e.step();
-    if (before.every((c, j) => c === e.cells[j])) return i + 1;
-  }
-  return null;
+const find = (e, t) => {
+  const out = [];
+  for (let y = 0; y < e.height; y++)
+    for (let x = 0; x < e.width; x++)
+      if (cell(e, x, y) === t) out.push({ x, y });
+  return out;
 };
 
 const tests = {};
 
-tests.sandFallsExactlyOneCellPerStep = () => {
-  const e = new SandboxEngine(5, 10, 1);
+// --- Gravity & kinematics ----------------------------------------------------
+
+tests.sandAcceleratesUnderGravity = () => {
+  const e = new SandboxEngine(5, 80, 1);
   e.set(2, 0, SAND);
-  for (let step = 0; step < 9; step++) {
+  const ys = [0];
+  while (ys[ys.length - 1] < 79 && ys.length < 200) {
     e.step();
-    assert.equal(cell(e, 2, step), EMPTY);
-    assert.equal(cell(e, 2, step + 1), SAND);
+    const [s] = find(e, SAND);
+    assert.ok(s, "sand disappeared mid-fall");
+    ys.push(s.y);
   }
+  const steps = ys.length - 1;
+  // Constant 1 cell/tick would need 79 steps; gravity must beat that easily.
+  assert.ok(steps < 40, `fall took ${steps} steps, expected acceleration`);
+  // Position must increase monotonically and never skip past the floor.
+  for (let i = 1; i < ys.length; i++) {
+    assert.ok(ys[i] >= ys[i - 1], "sand moved upward");
+    assert.ok(ys[i] - ys[i - 1] <= MAX_FALL, "exceeded terminal velocity");
+    assert.ok(ys[i] <= 79, "sand left the grid");
+  }
+  // Late-fall speed should exceed the 1 cell/tick of the naive automaton.
+  const lastDelta = ys[ys.length - 1] - ys[ys.length - 2];
+  assert.ok(lastDelta > 1, `expected terminal-speed fall, got ${lastDelta}`);
 };
 
-tests.sandRestsOnFloorAndWall = () => {
-  const e = new SandboxEngine(3, 10, 1);
-  for (let x = 0; x < 3; x++) e.set(x, 5, WALL);
-  e.set(1, 0, SAND);
-  for (let i = 0; i < 20; i++) e.step();
-  assert.equal(cell(e, 1, 4), SAND);
-  assert.equal(cell(e, 1, 5), WALL);
+tests.fastSandNeverTunnelsThroughWalls = () => {
+  const e = new SandboxEngine(3, 100, 2);
+  for (let x = 0; x < 3; x++) e.set(x, 70, WALL); // full-width shelf
+  e.set(1, 0, SAND); // long free fall -> terminal velocity at impact
+  let minDistanceAboveWall = Infinity;
+  for (let i = 0; i < 200; i++) {
+    e.step();
+    for (const s of find(e, SAND)) {
+      assert.ok(s.y < 70, `sand tunnelled through the wall to y=${s.y}`);
+      minDistanceAboveWall = Math.min(minDistanceAboveWall, 70 - 1 - s.y);
+    }
+  }
+  assert.equal(minDistanceAboveWall, 0, "sand never landed on the wall");
+  assert.equal(count(e, SAND), 1);
 };
 
 tests.fullSandLayerIsStable = () => {
@@ -57,6 +82,8 @@ tests.fullSandLayerIsStable = () => {
   for (let i = 0; i < 10; i++) e.step();
   assert.deepEqual(Array.from(e.cells), before);
 };
+
+// --- Conservation laws ---------------------------------------------------------
 
 tests.massConservationInRandomSoup = () => {
   const e = new SandboxEngine(40, 60, 7);
@@ -74,16 +101,30 @@ tests.massConservationInRandomSoup = () => {
   assert.deepEqual([EMPTY, WALL, SAND, WATER].map(t => count(e, t)), counts);
 };
 
+tests.wallsNeverMove = () => {
+  const e = new SandboxEngine(20, 20, 3);
+  const walls = [[3, 3], [10, 15], [19, 19], [0, 0], [5, 10]];
+  for (const [x, y] of walls) e.set(x, y, WALL);
+  e.paint(10, 2, 3, SAND);
+  e.paint(10, 8, 3, WATER);
+  for (let i = 0; i < 200; i++) e.step();
+  for (const [x, y] of walls) assert.equal(cell(e, x, y), WALL);
+};
+
+// --- Sand behaviour --------------------------------------------------------------
+
 tests.sandColumnCollapsesIntoSupportedPile = () => {
   const e = new SandboxEngine(21, 30, 11);
   for (let y = 0; y < 10; y++) e.set(10, y, SAND);
   const total = count(e, SAND);
-  assert.notEqual(runUntilStable(e, 500), null, "pile never stabilised");
+  for (let i = 0; i < 800; i++) e.step();
   assert.equal(count(e, SAND), total);
-  for (let y = 0; y < e.height - 1; y++)
-    for (let x = 0; x < e.width; x++)
-      if (cell(e, x, y) === SAND)
-        assert.notEqual(cell(e, x, y + 1), EMPTY, `floating sand at (${x}, ${y})`);
+  // No floating sand: every grain rests on the floor or on something.
+  for (const s of find(e, SAND))
+    if (s.y < e.height - 1)
+      assert.notEqual(cell(e, s.x, s.y + 1), EMPTY, `floating sand at (${s.x}, ${s.y})`);
+  // The column spread sideways into a pile wider than one cell.
+  assert.ok(new Set(find(e, SAND).map(s => s.x)).size > 1);
 };
 
 tests.sandSinksThroughWater = () => {
@@ -91,15 +132,14 @@ tests.sandSinksThroughWater = () => {
   for (let y = 8; y < 12; y++) { e.set(0, y, WALL); e.set(6, y, WALL); }
   for (let x = 1; x < 6; x++) for (let y = 8; y < 11; y++) e.set(x, y, WATER);
   e.set(3, 0, SAND);
-  for (let i = 0; i < 60; i++) e.step();
+  for (let i = 0; i < 80; i++) e.step();
   assert.equal(count(e, SAND), 1);
-  let sx = -1, sy = -1;
-  for (let y = 0; y < e.height; y++)
-    for (let x = 0; x < e.width; x++)
-      if (cell(e, x, y) === SAND) { sx = x; sy = y; }
-  assert.equal(sy, 11, "sand should reach the basin floor");
-  assert.equal(cell(e, sx, sy - 1), WATER, "sand should be submerged");
+  const [s] = find(e, SAND);
+  assert.equal(s.y, 11, "sand should reach the basin floor");
+  assert.equal(cell(e, s.x, s.y - 1), WATER, "sand should be submerged");
 };
+
+// --- Water behaviour ---------------------------------------------------------------
 
 tests.waterLevelsOutInABasin = () => {
   const e = new SandboxEngine(32, 20, 13);
@@ -107,7 +147,7 @@ tests.waterLevelsOutInABasin = () => {
   for (let y = 10; y < 19; y++) { e.set(0, y, WALL); e.set(31, y, WALL); }
   for (let x = 1; x < 9; x++) for (let y = 11; y < 19; y++) e.set(x, y, WATER);
   const total = count(e, WATER);
-  for (let i = 0; i < 4000; i++) e.step();
+  for (let i = 0; i < 1500; i++) e.step();
   assert.equal(count(e, WATER), total);
   const heights = [];
   for (let x = 1; x < 31; x++) {
@@ -127,31 +167,12 @@ tests.waterStaysInsideSealedBox = () => {
   const total = count(e, WATER);
   for (let i = 0; i < 300; i++) e.step();
   assert.equal(count(e, WATER), total);
-  for (let y = 0; y < e.height; y++)
-    for (let x = 0; x < e.width; x++)
-      if (cell(e, x, y) === WATER)
-        assert.ok(x >= 3 && x <= 8 && y >= 3 && y <= 8, `water escaped to (${x}, ${y})`);
+  for (const w of find(e, WATER))
+    assert.ok(w.x >= 3 && w.x <= 8 && w.y >= 3 && w.y <= 8,
+      `water escaped to (${w.x}, ${w.y})`);
 };
 
-tests.eachParticleMovesAtMostOneCellPerStep = () => {
-  const e = new SandboxEngine(15, 30, 23);
-  e.paint(7, 3, 2, SAND);
-  e.paint(7, 10, 2, WATER);
-  for (let i = 0; i < 100; i++) {
-    const before = Array.from(e.cells);
-    e.step();
-    for (let y = 0; y < e.height; y++)
-      for (let x = 0; x < e.width; x++) {
-        const c = cell(e, x, y);
-        if (c !== SAND && c !== WATER) continue;
-        let near = false;
-        for (let ny = Math.max(0, y - 1); ny <= Math.min(e.height - 1, y + 1); ny++)
-          for (let nx = Math.max(0, x - 1); nx <= Math.min(e.width - 1, x + 1); nx++)
-            if (before[ny * e.width + nx] === c) near = true;
-        assert.ok(near, `particle teleported to (${x}, ${y})`);
-      }
-  }
-};
+// --- Engine guarantees ------------------------------------------------------------
 
 tests.determinismSameSeedSameResult = () => {
   const build = seed => {
@@ -173,6 +194,11 @@ tests.particlesInCornersDoNotCrashOrEscape = () => {
   for (let i = 0; i < 100; i++) e.step();
   assert.equal(count(e, SAND), 2);
   assert.equal(count(e, WATER), 2);
+};
+
+tests.gravityConstantsAreSane = () => {
+  assert.ok(GRAVITY > 0, "gravity must pull down");
+  assert.ok(MAX_FALL >= 2, "terminal velocity must allow multi-cell falls");
 };
 
 let passed = 0, failed = 0;

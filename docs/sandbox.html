@@ -77,7 +77,7 @@
 <div id="app">
   <header>
     <h1>物理沙盒</h1>
-    <span>cellular automata · 手指在画布上涂抹</span>
+    <span>手指在画布上涂抹</span>
   </header>
   <div id="stage"><canvas id="view"></canvas></div>
   <div id="toolbar">
@@ -98,14 +98,25 @@
 <script>
 "use strict";
 // ============================================================================
-// Falling-sand cellular automaton.
-// JavaScript port of DailyQuipAI/Features/PhysicsSandbox/SandboxEngine.swift —
-// same rules, scan order and movement guarantees, validated by the test suite
-// in tools/sandbox_reference/. (RNG here is mulberry32 instead of SplitMix64
-// to avoid BigInt; the engine only consumes random booleans.)
+// Falling-sand cellular automaton with a per-particle velocity field.
+//
+// Compared to the textbook one-cell-per-tick automaton, particles accelerate
+// under gravity and traverse several cells per tick (scanning every cell on
+// the way so they can never tunnel through obstacles), sand slides
+// probabilistically and scatters on hard impacts, and water disperses several
+// cells horizontally per tick so it levels out like a liquid.
+//
+// Correctness is verified by tools/sandbox_reference/sandbox_html_tests.mjs,
+// which extracts and runs this exact script.
 // ============================================================================
 
 const EMPTY = 0, WALL = 1, SAND = 2, WATER = 3;
+
+const GRAVITY = 0.25;        // velocity gain per tick, in cells
+const MAX_FALL = 7;          // terminal velocity, cells per tick
+const SLIDE_PROBABILITY = 0.85; // chance loose sand slips down a slope per tick
+const IMPACT_VELOCITY = 3;   // landing faster than this always scatters
+const WATER_DISPERSION = 7;  // how far water can flow sideways per tick
 
 function mulberry32(seed) {
   let s = seed >>> 0;
@@ -124,6 +135,8 @@ class SandboxEngine {
     this.height = height;
     this.cells = new Uint8Array(width * height);
     this.moved = new Uint8Array(width * height);
+    this.velY = new Float32Array(width * height);  // falling speed per particle
+    this.tint = new Uint8Array(width * height);    // per-particle colour grain
     this.rand = mulberry32(seed);
     this.stepCount = 0;
   }
@@ -132,7 +145,11 @@ class SandboxEngine {
   index(x, y) { return y * this.width + x; }
 
   set(x, y, v) {
-    if (this.contains(x, y)) this.cells[this.index(x, y)] = v;
+    if (!this.contains(x, y)) return;
+    const i = this.index(x, y);
+    this.cells[i] = v;
+    this.velY[i] = 0;
+    if (v !== EMPTY) this.tint[i] = (this.rand() * 256) | 0;
   }
 
   paint(cx, cy, radius, type) {
@@ -143,13 +160,14 @@ class SandboxEngine {
 
   clear() {
     this.cells.fill(EMPTY);
+    this.velY.fill(0);
     this.stepCount = 0;
   }
 
   nextDir() { return this.rand() < 0.5 ? -1 : 1; }
 
   // One tick: bottom-up scan, alternating horizontal direction each tick to
-  // avoid drift bias; `moved` flags cap every particle at one cell per tick.
+  // avoid drift bias; `moved` flags ensure one update per particle per tick.
   step() {
     this.moved.fill(0);
     const leftToRight = this.stepCount % 2 === 0;
@@ -166,56 +184,114 @@ class SandboxEngine {
     this.stepCount++;
   }
 
+  // Gravity fall: advance up to vy cells, checking every intermediate cell so
+  // fast particles can never pass through an obstacle. Returns the landing y,
+  // or y itself if the cell directly below is not empty.
+  fallDestination(x, y, vy) {
+    let ny = y;
+    const maxFall = Math.max(1, vy | 0);
+    for (let n = 1; n <= maxFall; n++) {
+      if (y + n >= this.height) break;
+      if (this.cells[this.index(x, y + n)] !== EMPTY) break;
+      ny = y + n;
+    }
+    return ny;
+  }
+
   updateSand(x, y) {
     const src = this.index(x, y);
-    if (y + 1 >= this.height) return; // resting on the floor
+    if (y + 1 >= this.height) { this.velY[src] = 0; return; } // on the floor
+
+    const vy = Math.min(this.velY[src] + GRAVITY, MAX_FALL);
+    const landY = this.fallDestination(x, y, vy);
+    if (landY > y) {
+      this.move(src, this.index(x, landY), vy);
+      return;
+    }
+
     const below = this.index(x, y + 1);
-    if (this.cells[below] === EMPTY) { this.move(src, below); return; }
-    if (this.cells[below] === WATER && !this.moved[below]) { this.swap(src, below); return; }
-    const first = this.nextDir();
-    for (const dx of [first, -first]) {
-      const nx = x + dx;
-      if (nx >= 0 && nx < this.width) {
+    // Denser than water: sink through it one cell per tick.
+    if (this.cells[below] === WATER && !this.moved[below]) {
+      this.swap(src, below);
+      return;
+    }
+
+    // Blocked: slide down a slope. Hard landings always scatter sideways,
+    // settled grains slip with some probability, which keeps pile edges
+    // irregular instead of forming perfect 45-degree triangles.
+    const scatter = this.velY[src] >= IMPACT_VELOCITY;
+    this.velY[src] = 0;
+    if (scatter || this.rand() < SLIDE_PROBABILITY) {
+      const first = this.nextDir();
+      for (const dx of [first, -first]) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
         const diag = this.index(nx, y + 1);
-        if (this.cells[diag] === EMPTY) { this.move(src, diag); return; }
+        if (this.cells[diag] === EMPTY) { this.move(src, diag, 1); return; }
+        // Scattered grains can also displace water sideways-down.
+        if (scatter && this.cells[diag] === WATER && !this.moved[diag]) {
+          this.swap(src, diag);
+          return;
+        }
       }
     }
   }
 
   updateWater(x, y) {
     const src = this.index(x, y);
+
     if (y + 1 < this.height) {
-      const below = this.index(x, y + 1);
-      if (this.cells[below] === EMPTY) { this.move(src, below); return; }
+      const vy = Math.min(this.velY[src] + GRAVITY, MAX_FALL);
+      const landY = this.fallDestination(x, y, vy);
+      if (landY > y) {
+        this.move(src, this.index(x, landY), vy);
+        return;
+      }
+      this.velY[src] = 0;
       const first = this.nextDir();
       for (const dx of [first, -first]) {
         const nx = x + dx;
-        if (nx >= 0 && nx < this.width) {
-          const diag = this.index(nx, y + 1);
-          if (this.cells[diag] === EMPTY) { this.move(src, diag); return; }
+        if (nx < 0 || nx >= this.width) continue;
+        if (this.cells[this.index(nx, y + 1)] === EMPTY) {
+          this.move(src, this.index(nx, y + 1), 1);
+          return;
         }
       }
+    } else {
+      this.velY[src] = 0;
     }
+
+    // Can't fall: disperse sideways toward the farthest reachable empty cell,
+    // which makes pools level out quickly instead of crawling one cell a tick.
     const first = this.nextDir();
-    for (const dx of [first, -first]) {
-      const nx = x + dx;
-      if (nx >= 0 && nx < this.width) {
-        const side = this.index(nx, y);
-        if (this.cells[side] === EMPTY) { this.move(src, side); return; }
+    for (const dir of [first, -first]) {
+      let reach = 0;
+      for (let s = 1; s <= WATER_DISPERSION; s++) {
+        const nx = x + dir * s;
+        if (nx < 0 || nx >= this.width) break;
+        if (this.cells[this.index(nx, y)] !== EMPTY) break;
+        reach = s;
+      }
+      if (reach > 0) {
+        this.move(src, this.index(x + dir * reach, y), 0);
+        return;
       }
     }
   }
 
-  move(src, dst) {
+  move(src, dst, vy) {
     this.cells[dst] = this.cells[src];
     this.cells[src] = EMPTY;
+    this.velY[dst] = vy;
+    this.velY[src] = 0;
+    this.tint[dst] = this.tint[src];
     this.moved[dst] = 1;
   }
 
   swap(a, b) {
-    const t = this.cells[a];
-    this.cells[a] = this.cells[b];
-    this.cells[b] = t;
+    const c = this.cells[a]; this.cells[a] = this.cells[b]; this.cells[b] = c;
+    const v = this.velY[a];  this.velY[a] = this.velY[b];  this.velY[b] = v;
+    const t = this.tint[a];  this.tint[a] = this.tint[b];  this.tint[b] = t;
     this.moved[a] = 1;
     this.moved[b] = 1;
   }
@@ -225,10 +301,10 @@ class SandboxEngine {
 // Rendering & interaction
 // ============================================================================
 
-const GRID_W = 96, GRID_H = 144, STEPS_PER_FRAME = 2;
+const GRID_W = 120, GRID_H = 180, STEPS_PER_FRAME = 2;
 const engine = new SandboxEngine(GRID_W, GRID_H, Date.now() >>> 0);
 
-// Per-cell brightness noise so sand looks grainy rather than flat.
+// Static per-position noise used for wall texture.
 const noise = new Float32Array(GRID_W * GRID_H);
 {
   const nrand = mulberry32(1234);
@@ -262,14 +338,30 @@ window.addEventListener("resize", layoutCanvas);
 function render() {
   const data = image.data;
   const cells = engine.cells;
+  const tint = engine.tint;
   for (let i = 0; i < cells.length; i++) {
     const o = i * 4;
-    const n = noise[i];
     switch (cells[i]) {
-      case SAND:  data[o] = 232 * n; data[o + 1] = 191 * n; data[o + 2] = 102 * n; data[o + 3] = 255; break;
-      case WATER: data[o] = 60;      data[o + 1] = 130;     data[o + 2] = 240;     data[o + 3] = 255; break;
-      case WALL:  data[o] = 150 * n; data[o + 1] = 156 * n; data[o + 2] = 170 * n; data[o + 3] = 255; break;
-      default:    data[o] = 20;      data[o + 1] = 24;      data[o + 2] = 33;      data[o + 3] = 255;
+      case SAND: {
+        // Per-grain brightness so flowing sand shimmers like real grains.
+        const g = 0.78 + (tint[i] / 255) * 0.38;
+        data[o] = 226 * g; data[o + 1] = 188 * g; data[o + 2] = 106 * g; data[o + 3] = 255;
+        break;
+      }
+      case WATER: {
+        // Lighter at the surface, darker when there is water above.
+        const surface = i >= GRID_W && cells[i - GRID_W] !== WATER;
+        const g = (surface ? 1.12 : 0.92) + (tint[i] / 255) * 0.08;
+        data[o] = 52 * g; data[o + 1] = 124 * g; data[o + 2] = 235 * g; data[o + 3] = 255;
+        break;
+      }
+      case WALL: {
+        const n = noise[i];
+        data[o] = 150 * n; data[o + 1] = 156 * n; data[o + 2] = 170 * n; data[o + 3] = 255;
+        break;
+      }
+      default:
+        data[o] = 20; data[o + 1] = 24; data[o + 2] = 33; data[o + 3] = 255;
     }
   }
   gctx.putImageData(image, 0, 0);
@@ -338,7 +430,7 @@ document.getElementById("btn-pause").addEventListener("click", e => {
   e.currentTarget.textContent = paused ? "继续" : "暂停";
 });
 
-const brushSizes = [["小", 1], ["中", 3], ["大", 5]];
+const brushSizes = [["小", 2], ["中", 3], ["大", 6]];
 let brushIndex = 1;
 document.getElementById("btn-brush").addEventListener("click", e => {
   brushIndex = (brushIndex + 1) % brushSizes.length;
@@ -359,16 +451,16 @@ function demoScene() {
   for (let i = 0; i < Math.floor(GRID_W * 0.55); i++)
     engine.set(i, cy + Math.floor(i * 0.25), WALL);
   for (let i = 0; i < Math.floor(GRID_W * 0.45); i++)
-    engine.set(GRID_W - 1 - i, cy - 18 + Math.floor(i * 0.3), WALL);
+    engine.set(GRID_W - 1 - i, cy - 22 + Math.floor(i * 0.3), WALL);
   // A basin on the floor.
   const bl = Math.floor(GRID_W * 0.30), br = Math.floor(GRID_W * 0.78);
-  for (let y = GRID_H - 14; y < GRID_H; y++) {
+  for (let y = GRID_H - 18; y < GRID_H; y++) {
     engine.set(bl, y, WALL);
     engine.set(br, y, WALL);
   }
   // Falling sand and water to start things off.
-  engine.paint(Math.floor(GRID_W * 0.7), 8, 5, SAND);
-  engine.paint(Math.floor(GRID_W * 0.25), 4, 5, WATER);
+  engine.paint(Math.floor(GRID_W * 0.7), 10, 6, SAND);
+  engine.paint(Math.floor(GRID_W * 0.25), 5, 6, WATER);
 }
 
 // --- Main loop -----------------------------------------------------------------
