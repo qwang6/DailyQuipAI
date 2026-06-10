@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>物理沙盒 · Physics Sandbox</title>
+<title>物理沙盒 · Fluid Sandbox</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     height: 100%;
     overflow: hidden;
-    background: #0d0f14;
+    background: #0a0c10;
     color: #e8eaf0;
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
     touch-action: none;
@@ -40,8 +40,8 @@
     padding: 4px 10px;
   }
   canvas#view {
-    border-radius: 12px;
-    background: #141821;
+    border-radius: 14px;
+    background: #0e1118;
     touch-action: none;
     display: block;
   }
@@ -71,15 +71,22 @@
   #btn-wall.selected  { background: #3a3f4a; border-color: #9aa0ae; }
   #btn-erase.selected { background: #4a2430; border-color: #e06080; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  #nogl {
+    display: none;
+    padding: 24px;
+    text-align: center;
+    color: #8a90a0;
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>物理沙盒</h1>
-    <span>手指在画布上涂抹</span>
+    <span>流体模拟 · 手指涂抹</span>
   </header>
-  <div id="stage"><canvas id="view"></canvas></div>
+  <div id="stage"><canvas id="view"></canvas><div id="nogl">此设备不支持 WebGL,无法运行流体渲染。</div></div>
   <div id="toolbar">
     <div class="row">
       <button id="btn-sand"  class="selected"><span class="dot" style="background:#e8bf66"></span>沙子</button>
@@ -98,25 +105,31 @@
 <script>
 "use strict";
 // ============================================================================
-// Falling-sand cellular automaton with a per-particle velocity field.
+// Particle fluid engine — smoothed-particle hydrodynamics in the style of
+// Clavet et al., "Particle-based Viscoelastic Fluid Simulation" (SCA 2005):
+// gravity advection + double-density relaxation, XSPH viscosity, mass-based
+// density so sand sinks in water, signed-distance-field wall collisions and
+// friction/sleeping so sand forms persistent piles while water flows level.
 //
-// Compared to the textbook one-cell-per-tick automaton, particles accelerate
-// under gravity and traverse several cells per tick (scanning every cell on
-// the way so they can never tunnel through obstacles), sand slides
-// probabilistically and scatters on hard impacts, and water disperses several
-// cells horizontally per tick so it levels out like a liquid.
-//
-// Correctness is verified by tools/sandbox_reference/sandbox_html_tests.mjs,
-// which extracts and runs this exact script.
+// This block is extracted and verified by
+// tools/sandbox_reference/sandbox_html_tests.mjs.
 // ============================================================================
 
-const EMPTY = 0, WALL = 1, SAND = 2, WATER = 3;
+const WATER = 0, SAND = 1;
 
-const GRAVITY = 0.25;        // velocity gain per tick, in cells
-const MAX_FALL = 7;          // terminal velocity, cells per tick
-const SLIDE_PROBABILITY = 0.85; // chance loose sand slips down a slope per tick
-const IMPACT_VELOCITY = 3;   // landing faster than this always scatters
-const WATER_DISPERSION = 7;  // how far water can flow sideways per tick
+const WORLD_W = 120, WORLD_H = 180;   // simulation space, particle radius ~1
+const MAX_PARTICLES = 3000;
+const H = 2.4;                        // interaction radius
+const REST_DENSITY = 5.0;
+const STIFFNESS = 0.06;
+const NEAR_STIFFNESS = 0.45;
+const GRAVITY = 0.035;
+const MAX_SPEED = 2.2;
+const COLLISION_R = 1.1;              // keep-out distance from walls
+const MASS = [1.0, 1.5];              // water, sand — sand is denser, so it sinks
+const XSPH = [0.15, 0.60];            // velocity smoothing (viscosity / granular friction)
+const CONTACT_FRICTION = [0.02, 0.55];
+const SLEEP_SPEED_SQ = 0.008;        // resting sand grains get damped to a stop
 
 function mulberry32(seed) {
   let s = seed >>> 0;
@@ -129,171 +142,425 @@ function mulberry32(seed) {
   };
 }
 
-class SandboxEngine {
-  constructor(width, height, seed) {
-    this.width = width;
-    this.height = height;
-    this.cells = new Uint8Array(width * height);
-    this.moved = new Uint8Array(width * height);
-    this.velY = new Float32Array(width * height);  // falling speed per particle
-    this.tint = new Uint8Array(width * height);    // per-particle colour grain
+// Felzenszwalb & Huttenlocher 1D squared distance transform.
+function edt1d(f, n, d, v, z) {
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) {
+      k--;
+      s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    }
+    k++;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const dq = q - v[k];
+    d[q] = dq * dq + f[v[k]];
+  }
+}
+
+// 2D Euclidean distance transform of a boolean grid (distance to nearest set cell).
+function edt2d(seed, w, h, out) {
+  const INF = 1e9;
+  const f = new Float64Array(Math.max(w, h));
+  const d = new Float64Array(Math.max(w, h));
+  const v = new Int32Array(Math.max(w, h));
+  const z = new Float64Array(Math.max(w, h) + 1);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = seed[y * w + x] ? 0 : INF;
+    edt1d(f, h, d, v, z);
+    for (let y = 0; y < h; y++) out[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) f[x] = out[y * w + x];
+    edt1d(f, w, d, v, z);
+    for (let x = 0; x < w; x++) out[y * w + x] = Math.sqrt(d[x]);
+  }
+}
+
+class FluidEngine {
+  constructor(seed) {
+    this.width = WORLD_W;
+    this.height = WORLD_H;
+    this.count = 0;
+    this.px = new Float32Array(MAX_PARTICLES);
+    this.py = new Float32Array(MAX_PARTICLES);
+    this.ppx = new Float32Array(MAX_PARTICLES);
+    this.ppy = new Float32Array(MAX_PARTICLES);
+    this.vx = new Float32Array(MAX_PARTICLES);
+    this.vy = new Float32Array(MAX_PARTICLES);
+    this.type = new Uint8Array(MAX_PARTICLES);
+    this.rho = new Float32Array(MAX_PARTICLES);
+    this.rhoNear = new Float32Array(MAX_PARTICLES);
+    this.press = new Float32Array(MAX_PARTICLES);
+    this.pressNear = new Float32Array(MAX_PARTICLES);
+    this.contact = new Uint8Array(MAX_PARTICLES);
+    // Granular sleep state: settled sand freezes so piles hold their shape.
+    this.asleep = new Uint8Array(MAX_PARTICLES);
+    this.sleepTimer = new Uint8Array(MAX_PARTICLES);
+    this.grounded = new Uint8Array(MAX_PARTICLES);
+    this.sx = new Float32Array(MAX_PARTICLES);
+    this.sy = new Float32Array(MAX_PARTICLES);
     this.rand = mulberry32(seed);
     this.stepCount = 0;
+
+    // Wall occupancy grid (1 world unit per cell) and its signed distance field.
+    this.walls = new Uint8Array(WORLD_W * WORLD_H);
+    this.sdf = new Float32Array(WORLD_W * WORLD_H);
+    this.sdfDirty = true;
+    this.sdfVersion = 0;   // bumped on every rebuild so the renderer re-uploads
+
+    // Spatial hash buckets for neighbour search.
+    this.cellSize = H;
+    this.bw = Math.ceil(WORLD_W / H);
+    this.bh = Math.ceil(WORLD_H / H);
+    this.buckets = [];
+    for (let i = 0; i < this.bw * this.bh; i++) this.buckets.push([]);
+
+    // Pair lists, rebuilt each step.
+    const cap = MAX_PARTICLES * 28;
+    this.pairI = new Int32Array(cap);
+    this.pairJ = new Int32Array(cap);
+    this.pairQ = new Float32Array(cap);
+    this.pairUX = new Float32Array(cap);
+    this.pairUY = new Float32Array(cap);
+    this.pairCount = 0;
+
+    this.dvx = new Float32Array(MAX_PARTICLES);
+    this.dvy = new Float32Array(MAX_PARTICLES);
   }
 
-  contains(x, y) { return x >= 0 && x < this.width && y >= 0 && y < this.height; }
-  index(x, y) { return y * this.width + x; }
-
-  set(x, y, v) {
-    if (!this.contains(x, y)) return;
-    const i = this.index(x, y);
-    this.cells[i] = v;
-    this.velY[i] = 0;
-    if (v !== EMPTY) this.tint[i] = (this.rand() * 256) | 0;
+  spawn(type, x, y, n, spread) {
+    for (let k = 0; k < n; k++) {
+      if (this.count >= MAX_PARTICLES) return;
+      const i = this.count++;
+      this.px[i] = Math.min(this.width - 1.5, Math.max(1.5, x + (this.rand() - 0.5) * 2 * spread));
+      this.py[i] = Math.min(this.height - 1.5, Math.max(1.5, y + (this.rand() - 0.5) * 2 * spread));
+      this.vx[i] = 0;
+      this.vy[i] = 0;
+      this.type[i] = type;
+      this.asleep[i] = 0;
+      this.sleepTimer[i] = 0;
+    }
   }
 
-  paint(cx, cy, radius, type) {
-    for (let dy = -radius; dy <= radius; dy++)
-      for (let dx = -radius; dx <= radius; dx++)
-        if (dx * dx + dy * dy <= radius * radius) this.set(cx + dx, cy + dy, type);
-  }
-
-  clear() {
-    this.cells.fill(EMPTY);
-    this.velY.fill(0);
+  clearAll() {
+    this.count = 0;
+    this.walls.fill(0);
+    this.asleep.fill(0);
+    this.sleepTimer.fill(0);
+    this.sdfDirty = true;
     this.stepCount = 0;
   }
 
-  nextDir() { return this.rand() < 0.5 ? -1 : 1; }
 
-  // One tick: bottom-up scan, alternating horizontal direction each tick to
-  // avoid drift bias; `moved` flags ensure one update per particle per tick.
+  paintWall(x, y, radius) {
+    const r2 = radius * radius;
+    for (let gy = Math.max(0, Math.floor(y - radius)); gy <= Math.min(WORLD_H - 1, Math.ceil(y + radius)); gy++)
+      for (let gx = Math.max(0, Math.floor(x - radius)); gx <= Math.min(WORLD_W - 1, Math.ceil(x + radius)); gx++) {
+        const dx = gx + 0.5 - x, dy = gy + 0.5 - y;
+        if (dx * dx + dy * dy <= r2) this.walls[gy * WORLD_W + gx] = 1;
+      }
+    this.sdfDirty = true;
+  }
+
+  eraseAt(x, y, radius) {
+    const r2 = radius * radius;
+    for (let gy = Math.max(0, Math.floor(y - radius)); gy <= Math.min(WORLD_H - 1, Math.ceil(y + radius)); gy++)
+      for (let gx = Math.max(0, Math.floor(x - radius)); gx <= Math.min(WORLD_W - 1, Math.ceil(x + radius)); gx++) {
+        const dx = gx + 0.5 - x, dy = gy + 0.5 - y;
+        if (dx * dx + dy * dy <= r2 && this.walls[gy * WORLD_W + gx]) {
+          this.walls[gy * WORLD_W + gx] = 0;
+          this.sdfDirty = true;
+        }
+      }
+    for (let i = this.count - 1; i >= 0; i--) {
+      const dx = this.px[i] - x, dy = this.py[i] - y;
+      if (dx * dx + dy * dy <= r2) {
+        const last = this.count - 1;
+        this.px[i] = this.px[last]; this.py[i] = this.py[last];
+        this.vx[i] = this.vx[last]; this.vy[i] = this.vy[last];
+        this.type[i] = this.type[last];
+        this.asleep[i] = this.asleep[last];
+        this.sleepTimer[i] = this.sleepTimer[last];
+        this.count--;
+      }
+    }
+  }
+
+  // Signed distance to walls: positive in free space, negative inside walls.
+  rebuildSDF() {
+    const dOut = new Float32Array(WORLD_W * WORLD_H);
+    const dIn = new Float32Array(WORLD_W * WORLD_H);
+    const inv = new Uint8Array(WORLD_W * WORLD_H);
+    let any = false;
+    for (let i = 0; i < this.walls.length; i++) {
+      inv[i] = this.walls[i] ? 0 : 1;
+      if (this.walls[i]) any = true;
+    }
+    if (!any) {
+      this.sdf.fill(1e3);
+      this.sdfDirty = false;
+      this.sdfVersion++;
+      return;
+    }
+    edt2d(this.walls, WORLD_W, WORLD_H, dOut);
+    edt2d(inv, WORLD_W, WORLD_H, dIn);
+    for (let i = 0; i < this.sdf.length; i++) this.sdf[i] = dOut[i] - dIn[i];
+    this.sdfDirty = false;
+    this.sdfVersion++;
+  }
+
+  sdfAt(x, y) {
+    // Bilinear sample at cell centres, clamped to the grid.
+    const fx = Math.min(WORLD_W - 1.001, Math.max(0, x - 0.5));
+    const fy = Math.min(WORLD_H - 1.001, Math.max(0, y - 0.5));
+    const x0 = fx | 0, y0 = fy | 0;
+    const tx = fx - x0, ty = fy - y0;
+    const i00 = y0 * WORLD_W + x0;
+    const s = this.sdf;
+    const a = s[i00] + (s[i00 + 1] - s[i00]) * tx;
+    const b = s[i00 + WORLD_W] + (s[i00 + WORLD_W + 1] - s[i00 + WORLD_W]) * tx;
+    return a + (b - a) * ty;
+  }
+
+  buildPairs() {
+    const bs = this.buckets;
+    for (let i = 0; i < bs.length; i++) bs[i].length = 0;
+    const inv = 1 / this.cellSize;
+    for (let i = 0; i < this.count; i++) {
+      let cx = (this.px[i] * inv) | 0;
+      let cy = (this.py[i] * inv) | 0;
+      if (cx < 0) cx = 0; else if (cx >= this.bw) cx = this.bw - 1;
+      if (cy < 0) cy = 0; else if (cy >= this.bh) cy = this.bh - 1;
+      bs[cy * this.bw + cx].push(i);
+    }
+    let np = 0;
+    const H2 = H * H;
+    const capacity = this.pairI.length;
+    for (let cy = 0; cy < this.bh; cy++) {
+      for (let cx = 0; cx < this.bw; cx++) {
+        const base = bs[cy * this.bw + cx];
+        if (base.length === 0) continue;
+        for (let oy = 0; oy <= 1; oy++) {
+          for (let ox = (oy === 0 ? 0 : -1); ox <= 1; ox++) {
+            const nx = cx + ox, ny = cy + oy;
+            if (nx < 0 || nx >= this.bw || ny >= this.bh) continue;
+            const other = bs[ny * this.bw + nx];
+            const sameCell = ox === 0 && oy === 0;
+            for (let a = 0; a < base.length; a++) {
+              const i = base[a];
+              for (let b = sameCell ? a + 1 : 0; b < other.length; b++) {
+                const j = other[b];
+                const dx = this.px[j] - this.px[i];
+                const dy = this.py[j] - this.py[i];
+                const r2 = dx * dx + dy * dy;
+                if (r2 >= H2 || r2 < 1e-12 || np >= capacity) continue;
+                const r = Math.sqrt(r2);
+                this.pairI[np] = i;
+                this.pairJ[np] = j;
+                this.pairQ[np] = 1 - r / H;
+                this.pairUX[np] = dx / r;
+                this.pairUY[np] = dy / r;
+                np++;
+              }
+            }
+          }
+        }
+      }
+    }
+    this.pairCount = np;
+  }
+
   step() {
-    this.moved.fill(0);
-    const leftToRight = this.stepCount % 2 === 0;
-    for (let y = this.height - 1; y >= 0; y--) {
-      for (let col = 0; col < this.width; col++) {
-        const x = leftToRight ? col : this.width - 1 - col;
-        const i = this.index(x, y);
-        if (this.moved[i]) continue;
-        const c = this.cells[i];
-        if (c === SAND) this.updateSand(x, y);
-        else if (c === WATER) this.updateWater(x, y);
+    if (this.sdfDirty) this.rebuildSDF();
+    const n = this.count;
+
+    // Gravity, speed clamp, advection. Sleeping sand is frozen in place but
+    // still participates in pressure relaxation as support for what's above.
+    for (let i = 0; i < n; i++) {
+      this.sx[i] = this.px[i];
+      this.sy[i] = this.py[i];
+      if (this.asleep[i]) {
+        this.vx[i] = 0;
+        this.vy[i] = 0;
+        this.ppx[i] = this.px[i];
+        this.ppy[i] = this.py[i];
+        continue;
+      }
+      this.vy[i] += GRAVITY;
+      const sp2 = this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i];
+      if (sp2 > MAX_SPEED * MAX_SPEED) {
+        const f = MAX_SPEED / Math.sqrt(sp2);
+        this.vx[i] *= f; this.vy[i] *= f;
+      }
+      this.ppx[i] = this.px[i];
+      this.ppy[i] = this.py[i];
+      this.px[i] += this.vx[i];
+      this.py[i] += this.vy[i];
+    }
+
+    this.buildPairs();
+    const np = this.pairCount;
+
+    // Double-density relaxation: mass-weighted so heavy sand displaces water.
+    for (let i = 0; i < n; i++) { this.rho[i] = 0; this.rhoNear[i] = 0; }
+    for (let p = 0; p < np; p++) {
+      const i = this.pairI[p], j = this.pairJ[p], q = this.pairQ[p];
+      const q2 = q * q, q3 = q2 * q;
+      const mi = MASS[this.type[i]], mj = MASS[this.type[j]];
+      this.rho[i] += mj * q2; this.rhoNear[i] += mj * q3;
+      this.rho[j] += mi * q2; this.rhoNear[j] += mi * q3;
+    }
+    for (let i = 0; i < n; i++) {
+      this.press[i] = STIFFNESS * (this.rho[i] - REST_DENSITY);
+      this.pressNear[i] = NEAR_STIFFNESS * this.rhoNear[i];
+    }
+    for (let p = 0; p < np; p++) {
+      const i = this.pairI[p], j = this.pairJ[p], q = this.pairQ[p];
+      const D = ((this.press[i] + this.press[j]) * 0.5 * q +
+                 (this.pressNear[i] + this.pressNear[j]) * 0.5 * q * q) * 0.5;
+      const mi = MASS[this.type[i]], mj = MASS[this.type[j]];
+      const wi = mj / (mi + mj), wj = mi / (mi + mj);
+      const dx = D * this.pairUX[p], dy = D * this.pairUY[p];
+      this.px[i] -= dx * wi; this.py[i] -= dy * wi;
+      this.px[j] += dx * wj; this.py[j] += dy * wj;
+    }
+
+    // Boundary and wall collisions (position projection).
+    for (let i = 0; i < n; i++) {
+      let c = 0;
+      if (this.px[i] < 1) { this.px[i] = 1; c = 1; }
+      else if (this.px[i] > this.width - 1) { this.px[i] = this.width - 1; c = 1; }
+      if (this.py[i] < 1) { this.py[i] = 1; c = 1; }
+      else if (this.py[i] > this.height - 1) { this.py[i] = this.height - 1; c = 1; }
+      const d = this.sdfAt(this.px[i], this.py[i]);
+      if (d < COLLISION_R) {
+        const e = 0.5;
+        let gx = this.sdfAt(this.px[i] + e, this.py[i]) - this.sdfAt(this.px[i] - e, this.py[i]);
+        let gy = this.sdfAt(this.px[i], this.py[i] + e) - this.sdfAt(this.px[i], this.py[i] - e);
+        const gl = Math.sqrt(gx * gx + gy * gy);
+        if (gl > 1e-6) {
+          gx /= gl; gy /= gl;
+          const push = COLLISION_R - d;
+          this.px[i] += gx * push;
+          this.py[i] += gy * push;
+          c = 1;
+        }
+      }
+      this.contact[i] = c;
+    }
+
+    // Recover velocities from positions. Sleeping grains that were barely
+    // nudged snap back and stay frozen; a hard shove wakes them up.
+    for (let i = 0; i < n; i++) {
+      if (this.asleep[i]) {
+        const dx = this.px[i] - this.sx[i], dy = this.py[i] - this.sy[i];
+        if (dx * dx + dy * dy < 0.006) {
+          this.px[i] = this.sx[i];
+          this.py[i] = this.sy[i];
+          this.vx[i] = 0;
+          this.vy[i] = 0;
+          continue;
+        }
+        this.asleep[i] = 0;
+        this.sleepTimer[i] = 0;
+      }
+      this.vx[i] = this.px[i] - this.ppx[i];
+      this.vy[i] = this.py[i] - this.ppy[i];
+    }
+
+    // XSPH velocity smoothing: viscosity for water, friction for sand.
+    for (let i = 0; i < n; i++) { this.dvx[i] = 0; this.dvy[i] = 0; }
+    for (let p = 0; p < np; p++) {
+      const i = this.pairI[p], j = this.pairJ[p], q = this.pairQ[p];
+      const sandPair = this.type[i] === SAND && this.type[j] === SAND;
+      // Frozen grains act like rough ground: sand flowing over them sticks.
+      const c = sandPair && (this.asleep[i] || this.asleep[j])
+        ? 0.9 * q
+        : (XSPH[this.type[i]] + XSPH[this.type[j]]) * 0.5 * q;
+      const dx = (this.vx[j] - this.vx[i]) * c;
+      const dy = (this.vy[j] - this.vy[i]) * c;
+      this.dvx[i] += dx; this.dvy[i] += dy;
+      this.dvx[j] -= dx; this.dvy[j] -= dy;
+    }
+    for (let i = 0; i < n; i++) {
+      if (this.asleep[i]) continue;
+      const nvx = this.vx[i] + this.dvx[i] * 0.5;
+      const nvy = this.vy[i] + this.dvy[i] * 0.5;
+      if (this.type[i] === SAND && nvx * this.vx[i] + nvy * this.vy[i] < 0) {
+        // Friction can only brake a grain, never throw it backwards —
+        // otherwise stacked corrections overshoot and grains jitter forever.
+        this.vx[i] = 0;
+        this.vy[i] = 0;
+      } else {
+        this.vx[i] = nvx;
+        this.vy[i] = nvy;
+      }
+      if (this.contact[i]) {
+        const mu = CONTACT_FRICTION[this.type[i]];
+        this.vx[i] *= 1 - mu;
+        this.vy[i] *= 1 - mu;
+      }
+    }
+
+    // Grounding: sand counts as supported if it touches the floor/walls or
+    // rests (directly or through a chain of grains) on supported sand.
+    // Supported slow grains fall asleep, which is what lets piles persist.
+    for (let i = 0; i < n; i++) this.grounded[i] = this.contact[i] || this.asleep[i] ? 1 : 0;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let p = 0; p < np; p++) {
+        const i = this.pairI[p], j = this.pairJ[p];
+        if (this.pairQ[p] < 0.3) continue;
+        if (this.type[i] !== SAND || this.type[j] !== SAND) continue;
+        if (this.grounded[j] && !this.grounded[i] && this.py[i] < this.py[j]) this.grounded[i] = 1;
+        else if (this.grounded[i] && !this.grounded[j] && this.py[j] < this.py[i]) this.grounded[j] = 1;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (this.type[i] !== SAND || this.asleep[i]) continue;
+      // Coulomb-style friction inside the supported contact network: grains
+      // that rest on the pile lose lateral momentum quickly, so the pile
+      // keeps an angle of repose instead of pancaking.
+      if (this.grounded[i]) this.vx[i] *= 0.5;
+      const slow = this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i] < SLEEP_SPEED_SQ;
+      if (this.grounded[i] && slow) {
+        if (++this.sleepTimer[i] >= 2) {
+          this.asleep[i] = 1;
+          this.vx[i] = 0;
+          this.vy[i] = 0;
+        }
+      } else {
+        this.sleepTimer[i] = 0;
+      }
+    }
+
+    // Final safety clamp: relaxation of freshly overlapping particles can
+    // inject large velocities; keep everything bounded.
+    for (let i = 0; i < n; i++) {
+      const sp2 = this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i];
+      if (sp2 > MAX_SPEED * MAX_SPEED) {
+        const f = MAX_SPEED / Math.sqrt(sp2);
+        this.vx[i] *= f;
+        this.vy[i] *= f;
       }
     }
     this.stepCount++;
   }
 
-  // Gravity fall: advance up to vy cells, checking every intermediate cell so
-  // fast particles can never pass through an obstacle. Returns the landing y,
-  // or y itself if the cell directly below is not empty.
-  fallDestination(x, y, vy) {
-    let ny = y;
-    const maxFall = Math.max(1, vy | 0);
-    for (let n = 1; n <= maxFall; n++) {
-      if (y + n >= this.height) break;
-      if (this.cells[this.index(x, y + n)] !== EMPTY) break;
-      ny = y + n;
-    }
-    return ny;
-  }
-
-  updateSand(x, y) {
-    const src = this.index(x, y);
-    if (y + 1 >= this.height) { this.velY[src] = 0; return; } // on the floor
-
-    const vy = Math.min(this.velY[src] + GRAVITY, MAX_FALL);
-    const landY = this.fallDestination(x, y, vy);
-    if (landY > y) {
-      this.move(src, this.index(x, landY), vy);
-      return;
-    }
-
-    const below = this.index(x, y + 1);
-    // Denser than water: sink through it one cell per tick.
-    if (this.cells[below] === WATER && !this.moved[below]) {
-      this.swap(src, below);
-      return;
-    }
-
-    // Blocked: slide down a slope. Hard landings always scatter sideways,
-    // settled grains slip with some probability, which keeps pile edges
-    // irregular instead of forming perfect 45-degree triangles.
-    const scatter = this.velY[src] >= IMPACT_VELOCITY;
-    this.velY[src] = 0;
-    if (scatter || this.rand() < SLIDE_PROBABILITY) {
-      const first = this.nextDir();
-      for (const dx of [first, -first]) {
-        const nx = x + dx;
-        if (nx < 0 || nx >= this.width) continue;
-        const diag = this.index(nx, y + 1);
-        if (this.cells[diag] === EMPTY) { this.move(src, diag, 1); return; }
-        // Scattered grains can also displace water sideways-down.
-        if (scatter && this.cells[diag] === WATER && !this.moved[diag]) {
-          this.swap(src, diag);
-          return;
-        }
-      }
-    }
-  }
-
-  updateWater(x, y) {
-    const src = this.index(x, y);
-
-    if (y + 1 < this.height) {
-      const vy = Math.min(this.velY[src] + GRAVITY, MAX_FALL);
-      const landY = this.fallDestination(x, y, vy);
-      if (landY > y) {
-        this.move(src, this.index(x, landY), vy);
-        return;
-      }
-      this.velY[src] = 0;
-      const first = this.nextDir();
-      for (const dx of [first, -first]) {
-        const nx = x + dx;
-        if (nx < 0 || nx >= this.width) continue;
-        if (this.cells[this.index(nx, y + 1)] === EMPTY) {
-          this.move(src, this.index(nx, y + 1), 1);
-          return;
-        }
-      }
-    } else {
-      this.velY[src] = 0;
-    }
-
-    // Can't fall: disperse sideways toward the farthest reachable empty cell,
-    // which makes pools level out quickly instead of crawling one cell a tick.
-    const first = this.nextDir();
-    for (const dir of [first, -first]) {
-      let reach = 0;
-      for (let s = 1; s <= WATER_DISPERSION; s++) {
-        const nx = x + dir * s;
-        if (nx < 0 || nx >= this.width) break;
-        if (this.cells[this.index(nx, y)] !== EMPTY) break;
-        reach = s;
-      }
-      if (reach > 0) {
-        this.move(src, this.index(x + dir * reach, y), 0);
-        return;
-      }
-    }
-  }
-
-  move(src, dst, vy) {
-    this.cells[dst] = this.cells[src];
-    this.cells[src] = EMPTY;
-    this.velY[dst] = vy;
-    this.velY[src] = 0;
-    this.tint[dst] = this.tint[src];
-    this.moved[dst] = 1;
-  }
-
-  swap(a, b) {
-    const c = this.cells[a]; this.cells[a] = this.cells[b]; this.cells[b] = c;
-    const v = this.velY[a];  this.velY[a] = this.velY[b];  this.velY[b] = v;
-    const t = this.tint[a];  this.tint[a] = this.tint[b];  this.tint[b] = t;
-    this.moved[a] = 1;
-    this.moved[b] = 1;
+  kineticEnergy() {
+    let e = 0;
+    for (let i = 0; i < this.count; i++)
+      e += MASS[this.type[i]] * (this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i]);
+    return e;
   }
 }
 
@@ -301,179 +568,415 @@ class SandboxEngine {
 // Rendering & interaction
 // ============================================================================
 
-const GRID_W = 120, GRID_H = 180, STEPS_PER_FRAME = 2;
-const engine = new SandboxEngine(GRID_W, GRID_H, Date.now() >>> 0);
-
-// Static per-position noise used for wall texture.
-const noise = new Float32Array(GRID_W * GRID_H);
-{
-  const nrand = mulberry32(1234);
-  for (let i = 0; i < noise.length; i++) noise[i] = 0.85 + nrand() * 0.3;
-}
+const SUBSTEPS = 3;
+const engine = new FluidEngine(Date.now() >>> 0);
 
 const view = document.getElementById("view");
-const ctx = view.getContext("2d");
-const grid = document.createElement("canvas");
-grid.width = GRID_W;
-grid.height = GRID_H;
-const gctx = grid.getContext("2d");
-const image = gctx.createImageData(GRID_W, GRID_H);
+const gl = view.getContext("webgl", { alpha: false, antialias: false, depth: false });
 
-function layoutCanvas() {
-  const stage = document.getElementById("stage");
-  const availW = stage.clientWidth - 20;
-  const availH = stage.clientHeight - 8;
-  const scale = Math.min(availW / GRID_W, availH / GRID_H);
-  const cssW = Math.floor(GRID_W * scale);
-  const cssH = Math.floor(GRID_H * scale);
-  const dpr = window.devicePixelRatio || 1;
-  view.style.width = cssW + "px";
-  view.style.height = cssH + "px";
-  view.width = Math.floor(cssW * dpr);
-  view.height = Math.floor(cssH * dpr);
-  ctx.imageSmoothingEnabled = false;
+if (!gl) {
+  view.style.display = "none";
+  document.getElementById("nogl").style.display = "block";
+} else {
+  main(gl);
 }
-window.addEventListener("resize", layoutCanvas);
 
-function render() {
-  const data = image.data;
-  const cells = engine.cells;
-  const tint = engine.tint;
-  for (let i = 0; i < cells.length; i++) {
-    const o = i * 4;
-    switch (cells[i]) {
-      case SAND: {
-        // Per-grain brightness so flowing sand shimmers like real grains.
-        const g = 0.78 + (tint[i] / 255) * 0.38;
-        data[o] = 226 * g; data[o + 1] = 188 * g; data[o + 2] = 106 * g; data[o + 3] = 255;
-        break;
-      }
-      case WATER: {
-        // Lighter at the surface, darker when there is water above.
-        const surface = i >= GRID_W && cells[i - GRID_W] !== WATER;
-        const g = (surface ? 1.12 : 0.92) + (tint[i] / 255) * 0.08;
-        data[o] = 52 * g; data[o + 1] = 124 * g; data[o + 2] = 235 * g; data[o + 3] = 255;
-        break;
-      }
-      case WALL: {
-        const n = noise[i];
-        data[o] = 150 * n; data[o + 1] = 156 * n; data[o + 2] = 170 * n; data[o + 3] = 255;
-        break;
-      }
-      default:
-        data[o] = 20; data[o + 1] = 24; data[o + 2] = 33; data[o + 3] = 255;
+function compile(gl, type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+
+function program(gl, vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+function main(gl) {
+  // ---- Splat pass: particles -> density field (R = water, G = sand) --------
+  const FIELD_SCALE = 3;
+  const FIELD_W = WORLD_W * FIELD_SCALE, FIELD_H = WORLD_H * FIELD_SCALE;
+
+  const splatVS = `
+attribute vec2 aPos;
+attribute float aType;
+uniform float uPointSize;
+varying float vType;
+void main() {
+  vec2 clip = vec2(aPos.x / ${WORLD_W}.0 * 2.0 - 1.0, 1.0 - aPos.y / ${WORLD_H}.0 * 2.0);
+  gl_Position = vec4(clip, 0.0, 1.0);
+  gl_PointSize = uPointSize;
+  vType = aType;
+}`;
+  const splatFS = `
+precision mediump float;
+varying float vType;
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(d, d);
+  if (r2 > 1.0) discard;
+  float w = 1.0 - r2;
+  w = w * w * 0.34;
+  gl_FragColor = mix(vec4(w, 0.0, 0.0, 0.0), vec4(0.0, w, 0.0, 0.0), vType);
+}`;
+
+  // ---- Composite pass: shade background, walls, sand and water --------------
+  const quadVS = `
+attribute vec2 aPos;
+varying vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+  const compositeFS = `
+precision mediump float;
+varying vec2 vUV;            // y = 1 is the top of the world
+uniform sampler2D uField;
+uniform sampler2D uSDF;      // row 0 = top of the world, value*64-32 = signed cells
+uniform vec2 uFieldPx;       // 1 / field resolution
+uniform float uTime;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float wallDist(vec2 uv) {
+  return texture2D(uSDF, vec2(uv.x, 1.0 - uv.y)).r * 64.0 - 32.0;
+}
+
+vec3 shadeScene(vec2 uv) {
+  // Backdrop: deep studio gradient with a faint cool wash.
+  vec3 col = mix(vec3(0.090, 0.105, 0.140), vec3(0.030, 0.036, 0.052), 1.0 - uv.y);
+  col += vec3(0.012) * vnoise(uv * 14.0);
+
+  // Stone walls from the signed distance field.
+  float d = wallDist(uv);
+  float wmask = 1.0 - smoothstep(-0.4, 1.5, d);
+  if (wmask > 0.003) {
+    float grain = vnoise(uv * vec2(60.0, 90.0)) * 0.5 + vnoise(uv * vec2(160.0, 240.0)) * 0.5;
+    vec3 stone = mix(vec3(0.30, 0.31, 0.35), vec3(0.42, 0.43, 0.48), grain);
+    float edge = smoothstep(-3.5, 0.8, d);   // light catches the rim
+    stone += vec3(0.10, 0.11, 0.12) * edge;
+    col = mix(col, stone, wmask);
+  }
+
+  // Sand: granular, warm, lit from the upper left.
+  float s = texture2D(uField, uv).g;
+  float smask = smoothstep(0.20, 0.42, s);
+  if (smask > 0.003) {
+    float sl = texture2D(uField, uv - vec2(uFieldPx.x * 2.0, 0.0)).g;
+    float sr = texture2D(uField, uv + vec2(uFieldPx.x * 2.0, 0.0)).g;
+    float sd = texture2D(uField, uv - vec2(0.0, uFieldPx.y * 2.0)).g;
+    float su = texture2D(uField, uv + vec2(0.0, uFieldPx.y * 2.0)).g;
+    vec3 N = normalize(vec3((sl - sr) * 2.4, (sd - su) * 2.4, 1.0));
+    vec3 L = normalize(vec3(-0.45, 0.65, 0.62));
+    float diff = max(dot(N, L), 0.0);
+    float grain = vnoise(uv * vec2(220.0, 330.0));
+    vec3 sand = vec3(0.78, 0.62, 0.36) * (0.55 + 0.45 * diff);
+    sand *= 0.82 + 0.30 * grain;
+    sand *= 1.0 - 0.25 * smoothstep(0.5, 1.0, s);  // self-shadow in thick sand
+    col = mix(col, sand, smask);
+  }
+  return col;
+}
+
+void main() {
+  vec2 uv = vUV;
+  float w = texture2D(uField, uv).r;
+  float wl = texture2D(uField, uv - vec2(uFieldPx.x * 2.0, 0.0)).r;
+  float wr = texture2D(uField, uv + vec2(uFieldPx.x * 2.0, 0.0)).r;
+  float wd = texture2D(uField, uv - vec2(0.0, uFieldPx.y * 2.0)).r;
+  float wu = texture2D(uField, uv + vec2(0.0, uFieldPx.y * 2.0)).r;
+  vec3 N = normalize(vec3((wl - wr) * 3.0, (wd - wu) * 3.0, 1.0));
+  float mask = smoothstep(0.26, 0.46, w);
+
+  // Refraction: bend the scene behind the water along the surface normal.
+  vec2 refr = N.xy * 0.045 * mask;
+  vec3 scene = shadeScene(uv + refr);
+
+  vec3 col = scene;
+  if (mask > 0.002) {
+    vec3 shallow = vec3(0.22, 0.58, 0.86);
+    vec3 deep = vec3(0.03, 0.18, 0.38);
+    vec3 tint = mix(shallow, deep, smoothstep(0.35, 1.0, w));
+    vec3 watered = scene * mix(vec3(1.0), vec3(0.55, 0.78, 1.0), mask) * 0.85 + tint * 0.50;
+
+    vec3 L = normalize(vec3(-0.45, 0.65, 0.62));
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 Hv = normalize(L + V);
+    float spec = pow(max(dot(N, Hv), 0.0), 90.0) * 0.9;
+    float fres = pow(1.0 - max(N.z, 0.0), 2.5) * 0.55;
+    float sparkle = vnoise(uv * 90.0 + vec2(uTime * 0.18, -uTime * 0.13));
+    spec *= 0.75 + 0.5 * sparkle;
+
+    col = mix(scene, watered, mask);
+    col += (spec + fres * 0.35) * mask * vec3(0.9, 0.97, 1.0);
+  }
+
+  // Gentle vignette and filmic-ish curve.
+  vec2 vc = uv - 0.5;
+  col *= 1.0 - dot(vc, vc) * 0.55;
+  col = col / (col + 0.55) * 1.45;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+  const splatProg = program(gl, splatVS, splatFS);
+  const compProg = program(gl, quadVS, compositeFS);
+
+  // Field framebuffer.
+  const fieldTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fieldTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  // SDF texture, refreshed whenever walls change.
+  const sdfTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const sdfPixels = new Uint8Array(WORLD_W * WORLD_H * 4);
+  let uploadedSdfVersion = -1;
+  function uploadSDF() {
+    if (engine.sdfDirty) engine.rebuildSDF();
+    if (engine.sdfVersion === uploadedSdfVersion) return;
+    for (let i = 0; i < engine.sdf.length; i++) {
+      const v = Math.max(0, Math.min(255, Math.round((engine.sdf[i] + 32) / 64 * 255)));
+      sdfPixels[i * 4] = v;
+      sdfPixels[i * 4 + 3] = 255;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, WORLD_W, WORLD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, sdfPixels);
+    uploadedSdfVersion = engine.sdfVersion;
+  }
+
+  // Particle buffer (x, y, type interleaved).
+  const particleData = new Float32Array(MAX_PARTICLES * 3);
+  const particleBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, particleData.byteLength, gl.DYNAMIC_DRAW);
+
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+
+  const splatLoc = {
+    aPos: gl.getAttribLocation(splatProg, "aPos"),
+    aType: gl.getAttribLocation(splatProg, "aType"),
+    uPointSize: gl.getUniformLocation(splatProg, "uPointSize"),
+  };
+  const compLoc = {
+    aPos: gl.getAttribLocation(compProg, "aPos"),
+    uField: gl.getUniformLocation(compProg, "uField"),
+    uSDF: gl.getUniformLocation(compProg, "uSDF"),
+    uFieldPx: gl.getUniformLocation(compProg, "uFieldPx"),
+    uTime: gl.getUniformLocation(compProg, "uTime"),
+  };
+
+  function layoutCanvas() {
+    const stage = document.getElementById("stage");
+    const availW = stage.clientWidth - 20;
+    const availH = stage.clientHeight - 8;
+    const scale = Math.min(availW / WORLD_W, availH / WORLD_H);
+    const cssW = Math.floor(WORLD_W * scale);
+    const cssH = Math.floor(WORLD_H * scale);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    view.style.width = cssW + "px";
+    view.style.height = cssH + "px";
+    view.width = Math.floor(cssW * dpr);
+    view.height = Math.floor(cssH * dpr);
+  }
+  window.addEventListener("resize", layoutCanvas);
+  layoutCanvas();
+
+  function render(time) {
+    uploadSDF();
+
+    // Pass 1: splat particles into the density field.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, FIELD_W, FIELD_H);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(splatProg);
+    const n = engine.count;
+    for (let i = 0; i < n; i++) {
+      particleData[i * 3] = engine.px[i];
+      particleData[i * 3 + 1] = engine.py[i];
+      particleData[i * 3 + 2] = engine.type[i];
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, particleData.subarray(0, n * 3));
+    gl.enableVertexAttribArray(splatLoc.aPos);
+    gl.vertexAttribPointer(splatLoc.aPos, 2, gl.FLOAT, false, 12, 0);
+    gl.enableVertexAttribArray(splatLoc.aType);
+    gl.vertexAttribPointer(splatLoc.aType, 1, gl.FLOAT, false, 12, 8);
+    gl.uniform1f(splatLoc.uPointSize, 5.2 * FIELD_SCALE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    if (n > 0) gl.drawArrays(gl.POINTS, 0, n);
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(splatLoc.aType);
+
+    // Pass 2: composite to screen.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, view.width, view.height);
+    gl.useProgram(compProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+    gl.uniform1i(compLoc.uField, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+    gl.uniform1i(compLoc.uSDF, 1);
+    gl.uniform2f(compLoc.uFieldPx, 1 / FIELD_W, 1 / FIELD_H);
+    gl.uniform1f(compLoc.uTime, time * 0.001);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(compLoc.aPos);
+    gl.vertexAttribPointer(compLoc.aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---- Touch / mouse -------------------------------------------------------
+
+  let material = WATER + 100; // sentinel values: 100+type for particles
+  const MAT_SAND = 100 + SAND, MAT_WATER = 100 + WATER, MAT_WALL = 1, MAT_ERASE = 2;
+  material = MAT_SAND;
+  let brush = 5;
+  let painting = false;
+  let pointerWorld = null;
+  let lastWall = null;
+
+  function worldFromEvent(e) {
+    const r = view.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) / r.width * WORLD_W,
+      y: (e.clientY - r.top) / r.height * WORLD_H,
+    };
+  }
+
+  view.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    view.setPointerCapture(e.pointerId);
+    painting = true;
+    lastWall = null;
+    pointerWorld = worldFromEvent(e);
+    applyTool();
+  });
+  view.addEventListener("pointermove", e => {
+    if (!painting) return;
+    e.preventDefault();
+    pointerWorld = worldFromEvent(e);
+    applyTool(true);
+  });
+  const stop = () => { painting = false; pointerWorld = null; lastWall = null; };
+  view.addEventListener("pointerup", stop);
+  view.addEventListener("pointercancel", stop);
+
+  function applyTool(isMove) {
+    const p = pointerWorld;
+    if (!p) return;
+    if (material === MAT_WALL) {
+      // Interpolate strokes so fast swipes draw solid walls.
+      const from = lastWall || p;
+      const steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / (brush * 0.35)));
+      for (let s = 0; s <= steps; s++)
+        engine.paintWall(from.x + (p.x - from.x) * s / steps,
+                         from.y + (p.y - from.y) * s / steps, brush * 0.7);
+      lastWall = p;
+    } else if (material === MAT_ERASE) {
+      engine.eraseAt(p.x, p.y, brush * 1.4);
     }
   }
-  gctx.putImageData(image, 0, 0);
-  ctx.drawImage(grid, 0, 0, view.width, view.height);
-}
 
-// --- Touch / mouse painting -------------------------------------------------
+  function emitFromPointer() {
+    if (!painting || !pointerWorld) return;
+    if (material === MAT_WATER) engine.spawn(WATER, pointerWorld.x, pointerWorld.y, 5, brush * 0.5);
+    else if (material === MAT_SAND) engine.spawn(SAND, pointerWorld.x, pointerWorld.y, 4, brush * 0.5);
+    else applyTool(true);
+  }
 
-let material = SAND;
-let brush = 3; // radius in cells
-let painting = false;
-let lastCell = null;
+  // ---- Toolbar ---------------------------------------------------------------
 
-function cellFromEvent(e) {
-  const r = view.getBoundingClientRect();
-  return {
-    x: Math.floor((e.clientX - r.left) / r.width * GRID_W),
-    y: Math.floor((e.clientY - r.top) / r.height * GRID_H),
+  const buttons = {
+    "btn-sand": MAT_SAND, "btn-water": MAT_WATER, "btn-wall": MAT_WALL, "btn-erase": MAT_ERASE,
   };
-}
-
-function strokeTo(p) {
-  // Interpolate between events so fast swipes leave a continuous trail.
-  const from = lastCell || p;
-  const steps = Math.max(Math.abs(p.x - from.x), Math.abs(p.y - from.y), 1);
-  for (let s = 0; s <= steps; s++) {
-    const x = Math.round(from.x + (p.x - from.x) * s / steps);
-    const y = Math.round(from.y + (p.y - from.y) * s / steps);
-    engine.paint(x, y, material === WALL || material === EMPTY ? Math.max(1, brush - 1) : brush, material);
+  for (const [id, m] of Object.entries(buttons)) {
+    document.getElementById(id).addEventListener("click", () => {
+      material = m;
+      for (const o of Object.keys(buttons))
+        document.getElementById(o).classList.toggle("selected", o === id);
+    });
   }
-  lastCell = p;
-}
 
-view.addEventListener("pointerdown", e => {
-  e.preventDefault();
-  view.setPointerCapture(e.pointerId);
-  painting = true;
-  lastCell = null;
-  strokeTo(cellFromEvent(e));
-});
-view.addEventListener("pointermove", e => {
-  if (!painting) return;
-  e.preventDefault();
-  strokeTo(cellFromEvent(e));
-});
-const stopPainting = () => { painting = false; lastCell = null; };
-view.addEventListener("pointerup", stopPainting);
-view.addEventListener("pointercancel", stopPainting);
-
-// --- Toolbar -----------------------------------------------------------------
-
-const materialButtons = {
-  "btn-sand": SAND, "btn-water": WATER, "btn-wall": WALL, "btn-erase": EMPTY,
-};
-for (const [id, type] of Object.entries(materialButtons)) {
-  document.getElementById(id).addEventListener("click", () => {
-    material = type;
-    for (const other of Object.keys(materialButtons))
-      document.getElementById(other).classList.toggle("selected", other === id);
+  let paused = false;
+  document.getElementById("btn-pause").addEventListener("click", e => {
+    paused = !paused;
+    e.currentTarget.textContent = paused ? "继续" : "暂停";
   });
-}
 
-let paused = false;
-document.getElementById("btn-pause").addEventListener("click", e => {
-  paused = !paused;
-  e.currentTarget.textContent = paused ? "继续" : "暂停";
-});
+  const brushSizes = [["小", 3], ["中", 5], ["大", 8]];
+  let brushIndex = 1;
+  document.getElementById("btn-brush").addEventListener("click", e => {
+    brushIndex = (brushIndex + 1) % brushSizes.length;
+    brush = brushSizes[brushIndex][1];
+    e.currentTarget.textContent = "笔刷：" + brushSizes[brushIndex][0];
+  });
 
-const brushSizes = [["小", 2], ["中", 3], ["大", 6]];
-let brushIndex = 1;
-document.getElementById("btn-brush").addEventListener("click", e => {
-  brushIndex = (brushIndex + 1) % brushSizes.length;
-  brush = brushSizes[brushIndex][1];
-  e.currentTarget.textContent = "笔刷：" + brushSizes[brushIndex][0];
-});
+  document.getElementById("btn-clear").addEventListener("click", () => {
+    engine.clearAll();
+    demoScene();
+  });
 
-document.getElementById("btn-clear").addEventListener("click", () => {
-  engine.clear();
-  demoScene();
-});
+  // ---- Demo scene --------------------------------------------------------------
 
-// --- Demo scene so the sandbox is alive on first open -------------------------
-
-function demoScene() {
-  const cy = Math.floor(GRID_H * 0.55);
-  // Two slanted wall ledges.
-  for (let i = 0; i < Math.floor(GRID_W * 0.55); i++)
-    engine.set(i, cy + Math.floor(i * 0.25), WALL);
-  for (let i = 0; i < Math.floor(GRID_W * 0.45); i++)
-    engine.set(GRID_W - 1 - i, cy - 22 + Math.floor(i * 0.3), WALL);
-  // A basin on the floor.
-  const bl = Math.floor(GRID_W * 0.30), br = Math.floor(GRID_W * 0.78);
-  for (let y = GRID_H - 18; y < GRID_H; y++) {
-    engine.set(bl, y, WALL);
-    engine.set(br, y, WALL);
+  function demoScene() {
+    // A shelf, a slope and a basin, plus a pool of water and a sand mound.
+    for (let i = 0; i < 58; i++) engine.paintWall(8 + i, 92 + i * 0.32, 2.2);
+    for (let i = 0; i < 46; i++) engine.paintWall(WORLD_W - 6 - i, 60 + i * 0.26, 2.2);
+    for (let y = 148; y < 179; y += 1) { engine.paintWall(34, y, 2.2); engine.paintWall(94, y, 2.2); }
+    for (let y = 0; y < 18; y++)
+      for (let x = 0; x < 32; x++)
+        engine.spawn(WATER, 40 + x * 1.6, 148 + y * 1.6, 1, 0.3);
+    for (let y = 0; y < 8; y++)
+      for (let x = 0; x < 12; x++)
+        engine.spawn(SAND, 88 - x * 1.5, 6 + y * 1.5, 1, 0.3);
   }
-  // Falling sand and water to start things off.
-  engine.paint(Math.floor(GRID_W * 0.7), 10, 6, SAND);
-  engine.paint(Math.floor(GRID_W * 0.25), 5, 6, WATER);
-}
 
-// --- Main loop -----------------------------------------------------------------
+  // ---- Main loop ------------------------------------------------------------------
 
-function frame() {
-  if (!paused) for (let s = 0; s < STEPS_PER_FRAME; s++) engine.step();
-  render();
+  let emitTick = 0;
+  function frame(t) {
+    if (!paused) {
+      if (++emitTick % 2 === 0) emitFromPointer();
+      for (let s = 0; s < SUBSTEPS; s++) engine.step();
+    }
+    render(t);
+    requestAnimationFrame(frame);
+  }
+
+  demoScene();
   requestAnimationFrame(frame);
 }
-
-layoutCanvas();
-demoScene();
-requestAnimationFrame(frame);
 </script>
 </body>
 </html>
