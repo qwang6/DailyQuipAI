@@ -96,3 +96,16 @@
 "onboarding.feature.testYourself.title" = "自我测试";
 "onboarding.feature.trackProgress.description" = "建立连胜记录并赢得成就";
 "onboarding.feature.trackProgress.title" = "跟踪进度";
+
+/* Physics Sandbox */
+"settings.section.lab" = "实验室";
+"sandbox.title" = "物理沙盒";
+"sandbox.subtitle" = "沙子与水的元胞自动机模拟";
+"sandbox.material" = "材料";
+"sandbox.material.sand" = "沙子";
+"sandbox.material.water" = "水";
+"sandbox.material.wall" = "墙";
+"sandbox.material.eraser" = "橡皮";
+"sandbox.pause" = "暂停";
+"sandbox.resume" = "继续";
+"sandbox.clear" = "清空";
