@@ -9,8 +9,13 @@ algorithm can be verified in environments without a Swift toolchain.
   RNG, same scan order, same rules). Keep in sync with the Swift file.
 - `sandbox_engine_tests.py` — mirrors
   `DailyQuipAITests/PhysicsSandbox/SandboxEngineTests.swift` one to one.
-- `sandbox_html_tests.mjs` — runs the same scenario tests against the JS
-  engine embedded in `docs/sandbox.html` (the standalone mobile web version).
+- `sandbox_html_tests.mjs` — tests the JS engine embedded in
+  `docs/sandbox.html` (the standalone mobile web version). The web engine
+  extends the basic rules with a per-particle velocity field: gravity
+  acceleration with multi-cell falls (obstacle-checked cell by cell, so no
+  tunnelling), probabilistic sand slides with impact scatter, and multi-cell
+  horizontal water dispersion. Its tests verify those dynamics plus the same
+  conservation/containment/determinism invariants.
 
 Run:
 
