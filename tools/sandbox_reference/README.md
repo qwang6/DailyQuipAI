@@ -9,13 +9,18 @@ algorithm can be verified in environments without a Swift toolchain.
   RNG, same scan order, same rules). Keep in sync with the Swift file.
 - `sandbox_engine_tests.py` — mirrors
   `DailyQuipAITests/PhysicsSandbox/SandboxEngineTests.swift` one to one.
-- `sandbox_html_tests.mjs` — tests the JS engine embedded in
-  `docs/sandbox.html` (the standalone mobile web version). The web engine
-  extends the basic rules with a per-particle velocity field: gravity
-  acceleration with multi-cell falls (obstacle-checked cell by cell, so no
-  tunnelling), probabilistic sand slides with impact scatter, and multi-cell
-  horizontal water dispersion. Its tests verify those dynamics plus the same
-  conservation/containment/determinism invariants.
+- `sandbox_html_tests.mjs` — tests the particle fluid engine embedded in
+  `docs/sandbox.html` (the standalone mobile web version). The web version
+  is a full SPH simulation (Clavet et al. 2005 double-density relaxation)
+  with WebGL shading: per-particle pressure/viscosity, mass-based density so
+  sand sinks in water, signed-distance-field wall collisions, and a granular
+  grounding/sleep model so sand heaps persist while water levels out. Its
+  tests verify: water comes to rest and finds its level, sand forms
+  persistent piles (height/width/creep bounds), sand sinks through water,
+  no tunnelling through walls, bounded velocities under chaos, determinism
+  for a fixed seed, particle-cap/eraser behaviour, and signed-SDF sanity.
+- `measure_fluid.mjs` — tuning harness that prints settling energy, pile
+  shape, sinking and containment metrics for the fluid engine.
 
 Run:
 
