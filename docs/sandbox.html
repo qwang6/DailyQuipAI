@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>物理沙盒 · Physics Sandbox</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #0d0f14;
+    color: #e8eaf0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  #app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    padding: 10px 16px 6px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 17px; font-weight: 600; }
+  header span { font-size: 12px; color: #8a90a0; }
+  #stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+  }
+  canvas#view {
+    border-radius: 12px;
+    background: #141821;
+    touch-action: none;
+    display: block;
+  }
+  #toolbar {
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .row { display: flex; gap: 8px; }
+  button {
+    flex: 1;
+    border: 1px solid #2a2f3d;
+    background: #1a1f2b;
+    color: #e8eaf0;
+    border-radius: 10px;
+    padding: 11px 0;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  button:active { background: #242b3a; }
+  button.selected { border-color: transparent; }
+  #btn-sand.selected  { background: #6b5524; border-color: #e8bf66; }
+  #btn-water.selected { background: #1d3a63; border-color: #4d8cf2; }
+  #btn-wall.selected  { background: #3a3f4a; border-color: #9aa0ae; }
+  #btn-erase.selected { background: #4a2430; border-color: #e06080; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>物理沙盒</h1>
+    <span>cellular automata · 手指在画布上涂抹</span>
+  </header>
+  <div id="stage"><canvas id="view"></canvas></div>
+  <div id="toolbar">
+    <div class="row">
+      <button id="btn-sand"  class="selected"><span class="dot" style="background:#e8bf66"></span>沙子</button>
+      <button id="btn-water"><span class="dot" style="background:#4d8cf2"></span>水</button>
+      <button id="btn-wall"><span class="dot" style="background:#9aa0ae"></span>墙</button>
+      <button id="btn-erase"><span class="dot" style="background:#e06080"></span>橡皮</button>
+    </div>
+    <div class="row">
+      <button id="btn-pause">暂停</button>
+      <button id="btn-brush">笔刷：中</button>
+      <button id="btn-clear">清空</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ============================================================================
+// Falling-sand cellular automaton.
+// JavaScript port of DailyQuipAI/Features/PhysicsSandbox/SandboxEngine.swift —
+// same rules, scan order and movement guarantees, validated by the test suite
+// in tools/sandbox_reference/. (RNG here is mulberry32 instead of SplitMix64
+// to avoid BigInt; the engine only consumes random booleans.)
+// ============================================================================
+
+const EMPTY = 0, WALL = 1, SAND = 2, WATER = 3;
+
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+class SandboxEngine {
+  constructor(width, height, seed) {
+    this.width = width;
+    this.height = height;
+    this.cells = new Uint8Array(width * height);
+    this.moved = new Uint8Array(width * height);
+    this.rand = mulberry32(seed);
+    this.stepCount = 0;
+  }
+
+  contains(x, y) { return x >= 0 && x < this.width && y >= 0 && y < this.height; }
+  index(x, y) { return y * this.width + x; }
+
+  set(x, y, v) {
+    if (this.contains(x, y)) this.cells[this.index(x, y)] = v;
+  }
+
+  paint(cx, cy, radius, type) {
+    for (let dy = -radius; dy <= radius; dy++)
+      for (let dx = -radius; dx <= radius; dx++)
+        if (dx * dx + dy * dy <= radius * radius) this.set(cx + dx, cy + dy, type);
+  }
+
+  clear() {
+    this.cells.fill(EMPTY);
+    this.stepCount = 0;
+  }
+
+  nextDir() { return this.rand() < 0.5 ? -1 : 1; }
+
+  // One tick: bottom-up scan, alternating horizontal direction each tick to
+  // avoid drift bias; `moved` flags cap every particle at one cell per tick.
+  step() {
+    this.moved.fill(0);
+    const leftToRight = this.stepCount % 2 === 0;
+    for (let y = this.height - 1; y >= 0; y--) {
+      for (let col = 0; col < this.width; col++) {
+        const x = leftToRight ? col : this.width - 1 - col;
+        const i = this.index(x, y);
+        if (this.moved[i]) continue;
+        const c = this.cells[i];
+        if (c === SAND) this.updateSand(x, y);
+        else if (c === WATER) this.updateWater(x, y);
+      }
+    }
+    this.stepCount++;
+  }
+
+  updateSand(x, y) {
+    const src = this.index(x, y);
+    if (y + 1 >= this.height) return; // resting on the floor
+    const below = this.index(x, y + 1);
+    if (this.cells[below] === EMPTY) { this.move(src, below); return; }
+    if (this.cells[below] === WATER && !this.moved[below]) { this.swap(src, below); return; }
+    const first = this.nextDir();
+    for (const dx of [first, -first]) {
+      const nx = x + dx;
+      if (nx >= 0 && nx < this.width) {
+        const diag = this.index(nx, y + 1);
+        if (this.cells[diag] === EMPTY) { this.move(src, diag); return; }
+      }
+    }
+  }
+
+  updateWater(x, y) {
+    const src = this.index(x, y);
+    if (y + 1 < this.height) {
+      const below = this.index(x, y + 1);
+      if (this.cells[below] === EMPTY) { this.move(src, below); return; }
+      const first = this.nextDir();
+      for (const dx of [first, -first]) {
+        const nx = x + dx;
+        if (nx >= 0 && nx < this.width) {
+          const diag = this.index(nx, y + 1);
+          if (this.cells[diag] === EMPTY) { this.move(src, diag); return; }
+        }
+      }
+    }
+    const first = this.nextDir();
+    for (const dx of [first, -first]) {
+      const nx = x + dx;
+      if (nx >= 0 && nx < this.width) {
+        const side = this.index(nx, y);
+        if (this.cells[side] === EMPTY) { this.move(src, side); return; }
+      }
+    }
+  }
+
+  move(src, dst) {
+    this.cells[dst] = this.cells[src];
+    this.cells[src] = EMPTY;
+    this.moved[dst] = 1;
+  }
+
+  swap(a, b) {
+    const t = this.cells[a];
+    this.cells[a] = this.cells[b];
+    this.cells[b] = t;
+    this.moved[a] = 1;
+    this.moved[b] = 1;
+  }
+}
+
+// ============================================================================
+// Rendering & interaction
+// ============================================================================
+
+const GRID_W = 96, GRID_H = 144, STEPS_PER_FRAME = 2;
+const engine = new SandboxEngine(GRID_W, GRID_H, Date.now() >>> 0);
+
+// Per-cell brightness noise so sand looks grainy rather than flat.
+const noise = new Float32Array(GRID_W * GRID_H);
+{
+  const nrand = mulberry32(1234);
+  for (let i = 0; i < noise.length; i++) noise[i] = 0.85 + nrand() * 0.3;
+}
+
+const view = document.getElementById("view");
+const ctx = view.getContext("2d");
+const grid = document.createElement("canvas");
+grid.width = GRID_W;
+grid.height = GRID_H;
+const gctx = grid.getContext("2d");
+const image = gctx.createImageData(GRID_W, GRID_H);
+
+function layoutCanvas() {
+  const stage = document.getElementById("stage");
+  const availW = stage.clientWidth - 20;
+  const availH = stage.clientHeight - 8;
+  const scale = Math.min(availW / GRID_W, availH / GRID_H);
+  const cssW = Math.floor(GRID_W * scale);
+  const cssH = Math.floor(GRID_H * scale);
+  const dpr = window.devicePixelRatio || 1;
+  view.style.width = cssW + "px";
+  view.style.height = cssH + "px";
+  view.width = Math.floor(cssW * dpr);
+  view.height = Math.floor(cssH * dpr);
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener("resize", layoutCanvas);
+
+function render() {
+  const data = image.data;
+  const cells = engine.cells;
+  for (let i = 0; i < cells.length; i++) {
+    const o = i * 4;
+    const n = noise[i];
+    switch (cells[i]) {
+      case SAND:  data[o] = 232 * n; data[o + 1] = 191 * n; data[o + 2] = 102 * n; data[o + 3] = 255; break;
+      case WATER: data[o] = 60;      data[o + 1] = 130;     data[o + 2] = 240;     data[o + 3] = 255; break;
+      case WALL:  data[o] = 150 * n; data[o + 1] = 156 * n; data[o + 2] = 170 * n; data[o + 3] = 255; break;
+      default:    data[o] = 20;      data[o + 1] = 24;      data[o + 2] = 33;      data[o + 3] = 255;
+    }
+  }
+  gctx.putImageData(image, 0, 0);
+  ctx.drawImage(grid, 0, 0, view.width, view.height);
+}
+
+// --- Touch / mouse painting -------------------------------------------------
+
+let material = SAND;
+let brush = 3; // radius in cells
+let painting = false;
+let lastCell = null;
+
+function cellFromEvent(e) {
+  const r = view.getBoundingClientRect();
+  return {
+    x: Math.floor((e.clientX - r.left) / r.width * GRID_W),
+    y: Math.floor((e.clientY - r.top) / r.height * GRID_H),
+  };
+}
+
+function strokeTo(p) {
+  // Interpolate between events so fast swipes leave a continuous trail.
+  const from = lastCell || p;
+  const steps = Math.max(Math.abs(p.x - from.x), Math.abs(p.y - from.y), 1);
+  for (let s = 0; s <= steps; s++) {
+    const x = Math.round(from.x + (p.x - from.x) * s / steps);
+    const y = Math.round(from.y + (p.y - from.y) * s / steps);
+    engine.paint(x, y, material === WALL || material === EMPTY ? Math.max(1, brush - 1) : brush, material);
+  }
+  lastCell = p;
+}
+
+view.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  view.setPointerCapture(e.pointerId);
+  painting = true;
+  lastCell = null;
+  strokeTo(cellFromEvent(e));
+});
+view.addEventListener("pointermove", e => {
+  if (!painting) return;
+  e.preventDefault();
+  strokeTo(cellFromEvent(e));
+});
+const stopPainting = () => { painting = false; lastCell = null; };
+view.addEventListener("pointerup", stopPainting);
+view.addEventListener("pointercancel", stopPainting);
+
+// --- Toolbar -----------------------------------------------------------------
+
+const materialButtons = {
+  "btn-sand": SAND, "btn-water": WATER, "btn-wall": WALL, "btn-erase": EMPTY,
+};
+for (const [id, type] of Object.entries(materialButtons)) {
+  document.getElementById(id).addEventListener("click", () => {
+    material = type;
+    for (const other of Object.keys(materialButtons))
+      document.getElementById(other).classList.toggle("selected", other === id);
+  });
+}
+
+let paused = false;
+document.getElementById("btn-pause").addEventListener("click", e => {
+  paused = !paused;
+  e.currentTarget.textContent = paused ? "继续" : "暂停";
+});
+
+const brushSizes = [["小", 1], ["中", 3], ["大", 5]];
+let brushIndex = 1;
+document.getElementById("btn-brush").addEventListener("click", e => {
+  brushIndex = (brushIndex + 1) % brushSizes.length;
+  brush = brushSizes[brushIndex][1];
+  e.currentTarget.textContent = "笔刷：" + brushSizes[brushIndex][0];
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  engine.clear();
+  demoScene();
+});
+
+// --- Demo scene so the sandbox is alive on first open -------------------------
+
+function demoScene() {
+  const cy = Math.floor(GRID_H * 0.55);
+  // Two slanted wall ledges.
+  for (let i = 0; i < Math.floor(GRID_W * 0.55); i++)
+    engine.set(i, cy + Math.floor(i * 0.25), WALL);
+  for (let i = 0; i < Math.floor(GRID_W * 0.45); i++)
+    engine.set(GRID_W - 1 - i, cy - 18 + Math.floor(i * 0.3), WALL);
+  // A basin on the floor.
+  const bl = Math.floor(GRID_W * 0.30), br = Math.floor(GRID_W * 0.78);
+  for (let y = GRID_H - 14; y < GRID_H; y++) {
+    engine.set(bl, y, WALL);
+    engine.set(br, y, WALL);
+  }
+  // Falling sand and water to start things off.
+  engine.paint(Math.floor(GRID_W * 0.7), 8, 5, SAND);
+  engine.paint(Math.floor(GRID_W * 0.25), 4, 5, WATER);
+}
+
+// --- Main loop -----------------------------------------------------------------
+
+function frame() {
+  if (!paused) for (let s = 0; s < STEPS_PER_FRAME; s++) engine.step();
+  render();
+  requestAnimationFrame(frame);
+}
+
+layoutCanvas();
+demoScene();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

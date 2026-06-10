@@ -9,11 +9,14 @@ algorithm can be verified in environments without a Swift toolchain.
   RNG, same scan order, same rules). Keep in sync with the Swift file.
 - `sandbox_engine_tests.py` — mirrors
   `DailyQuipAITests/PhysicsSandbox/SandboxEngineTests.swift` one to one.
+- `sandbox_html_tests.mjs` — runs the same scenario tests against the JS
+  engine embedded in `docs/sandbox.html` (the standalone mobile web version).
 
 Run:
 
 ```sh
 python3 sandbox_engine_tests.py
+node sandbox_html_tests.mjs
 ```
 
 ## Properties verified
