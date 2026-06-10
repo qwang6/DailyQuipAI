@@ -117,3 +117,4 @@ iOSInjectionProject/
 .env.*.local
 Config.xcconfig
 DailyQuipAI/Core/GeneratedConfig.swift
+__pycache__/
