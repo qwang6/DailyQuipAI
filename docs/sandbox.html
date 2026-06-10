@@ -209,6 +209,7 @@ class FluidEngine {
     this.grounded = new Uint8Array(MAX_PARTICLES);
     this.sx = new Float32Array(MAX_PARTICLES);
     this.sy = new Float32Array(MAX_PARTICLES);
+    this.agit = new Float32Array(MAX_PARTICLES); // churn level, drives foam
     this.rand = mulberry32(seed);
     this.stepCount = 0;
 
@@ -249,6 +250,7 @@ class FluidEngine {
       this.type[i] = type;
       this.asleep[i] = 0;
       this.sleepTimer[i] = 0;
+      this.agit[i] = 0.35; // fresh spray foams
     }
   }
 
@@ -291,6 +293,7 @@ class FluidEngine {
         this.type[i] = this.type[last];
         this.asleep[i] = this.asleep[last];
         this.sleepTimer[i] = this.sleepTimer[last];
+        this.agit[i] = this.agit[last];
         this.count--;
       }
     }
@@ -505,6 +508,11 @@ class FluidEngine {
         this.vx[i] = nvx;
         this.vy[i] = nvy;
       }
+      if (this.type[i] === WATER) {
+        // XSPH correction magnitude measures churn against the neighbourhood.
+        const churn = Math.sqrt(this.dvx[i] * this.dvx[i] + this.dvy[i] * this.dvy[i]);
+        this.agit[i] = Math.min(1, this.agit[i] * 0.90 + churn * 1.8);
+      }
       if (this.contact[i]) {
         const mu = CONTACT_FRICTION[this.type[i]];
         this.vx[i] *= 1 - mu;
@@ -608,24 +616,29 @@ function main(gl) {
   const splatVS = `
 attribute vec2 aPos;
 attribute float aType;
+attribute float aAgit;
 uniform float uPointSize;
 varying float vType;
+varying float vAgit;
 void main() {
   vec2 clip = vec2(aPos.x / ${WORLD_W}.0 * 2.0 - 1.0, 1.0 - aPos.y / ${WORLD_H}.0 * 2.0);
   gl_Position = vec4(clip, 0.0, 1.0);
   gl_PointSize = uPointSize;
   vType = aType;
+  vAgit = aAgit;
 }`;
   const splatFS = `
 precision mediump float;
 varying float vType;
+varying float vAgit;
 void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(d, d);
   if (r2 > 1.0) discard;
   float w = 1.0 - r2;
-  w = w * w * 0.34;
-  gl_FragColor = mix(vec4(w, 0.0, 0.0, 0.0), vec4(0.0, w, 0.0, 0.0), vType);
+  w = w * w * 0.52;
+  // R = water density, G = sand density, B = foam (churned water)
+  gl_FragColor = vec4(w * (1.0 - vType), w * vType, w * vAgit * (1.0 - vType), 0.0);
 }`;
 
   // ---- Composite pass: shade background, walls, sand and water --------------
@@ -639,10 +652,12 @@ void main() {
   const compositeFS = `
 precision mediump float;
 varying vec2 vUV;            // y = 1 is the top of the world
-uniform sampler2D uField;
+uniform sampler2D uField;    // R = water, G = sand, B = foam
 uniform sampler2D uSDF;      // row 0 = top of the world, value*64-32 = signed cells
 uniform vec2 uFieldPx;       // 1 / field resolution
 uniform float uTime;
+
+const vec3 LDIR = vec3(-0.42, 0.62, 0.66);   // key light, upper-left
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -653,83 +668,146 @@ float vnoise(vec2 p) {
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+float fbm(vec2 p) {
+  return vnoise(p) * 0.62 + vnoise(p * 2.3 + 7.1) * 0.38;
+}
 float wallDist(vec2 uv) {
   return texture2D(uSDF, vec2(uv.x, 1.0 - uv.y)).r * 64.0 - 32.0;
 }
 
-vec3 shadeScene(vec2 uv) {
-  // Backdrop: deep studio gradient with a faint cool wash.
-  vec3 col = mix(vec3(0.090, 0.105, 0.140), vec3(0.030, 0.036, 0.052), 1.0 - uv.y);
-  col += vec3(0.012) * vnoise(uv * 14.0);
+// How much stuff blocks light at this point (walls, sand, some water).
+float occluder(vec2 uv) {
+  float w = 1.0 - smoothstep(-0.4, 1.5, wallDist(uv));
+  vec4 f = texture2D(uField, uv);
+  return clamp(w + smoothstep(0.20, 0.45, f.g) * 0.85 + smoothstep(0.30, 0.60, f.r) * 0.30, 0.0, 1.0);
+}
+
+// Cheap soft shadow: march a few taps toward the key light.
+float lightVisibility(vec2 uv) {
+  vec2 ld = normalize(LDIR.xy) * vec2(1.0, 1.0);
+  float occ = 0.0;
+  for (int i = 1; i <= 6; i++) {
+    float t = float(i) / 6.0;
+    occ = max(occ, occluder(uv + ld * t * 0.085) * (1.0 - t * 0.75));
+  }
+  return 1.0 - occ * 0.55;
+}
+
+// Procedural environment for reflections: dark studio with a warm key light.
+vec3 skyColor(vec3 r) {
+  float up = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 sky = mix(vec3(0.05, 0.06, 0.09), vec3(0.38, 0.46, 0.60), up);
+  float sun = pow(max(dot(normalize(r), normalize(LDIR)), 0.0), 22.0);
+  return sky + vec3(1.0, 0.90, 0.72) * sun * 1.5;
+}
+
+vec3 shadeScene(vec2 uv, float vis) {
+  // Backdrop: deep studio gradient with faint texture.
+  vec3 col = mix(vec3(0.085, 0.100, 0.135), vec3(0.026, 0.032, 0.048), 1.0 - uv.y);
+  col += vec3(0.010) * fbm(uv * 16.0);
+
+  vec4 f = texture2D(uField, uv);
 
   // Stone walls from the signed distance field.
   float d = wallDist(uv);
   float wmask = 1.0 - smoothstep(-0.4, 1.5, d);
   if (wmask > 0.003) {
-    float grain = vnoise(uv * vec2(60.0, 90.0)) * 0.5 + vnoise(uv * vec2(160.0, 240.0)) * 0.5;
-    vec3 stone = mix(vec3(0.30, 0.31, 0.35), vec3(0.42, 0.43, 0.48), grain);
-    float edge = smoothstep(-3.5, 0.8, d);   // light catches the rim
-    stone += vec3(0.10, 0.11, 0.12) * edge;
+    float grain = fbm(uv * vec2(70.0, 105.0));
+    vec3 stone = mix(vec3(0.26, 0.27, 0.31), vec3(0.40, 0.41, 0.46), grain);
+    stone += vec3(0.11, 0.115, 0.125) * smoothstep(-3.5, 0.8, d); // rim light
     col = mix(col, stone, wmask);
   }
 
-  // Sand: granular, warm, lit from the upper left.
-  float s = texture2D(uField, uv).g;
-  float smask = smoothstep(0.20, 0.42, s);
+  // Sand: granular, warm, directionally lit; darkens when wet.
+  float sv = f.g;
+  float smask = smoothstep(0.20, 0.42, sv);
   if (smask > 0.003) {
     float sl = texture2D(uField, uv - vec2(uFieldPx.x * 2.0, 0.0)).g;
     float sr = texture2D(uField, uv + vec2(uFieldPx.x * 2.0, 0.0)).g;
     float sd = texture2D(uField, uv - vec2(0.0, uFieldPx.y * 2.0)).g;
     float su = texture2D(uField, uv + vec2(0.0, uFieldPx.y * 2.0)).g;
     vec3 N = normalize(vec3((sl - sr) * 2.4, (sd - su) * 2.4, 1.0));
-    vec3 L = normalize(vec3(-0.45, 0.65, 0.62));
-    float diff = max(dot(N, L), 0.0);
-    float grain = vnoise(uv * vec2(220.0, 330.0));
-    vec3 sand = vec3(0.78, 0.62, 0.36) * (0.55 + 0.45 * diff);
-    sand *= 0.82 + 0.30 * grain;
-    sand *= 1.0 - 0.25 * smoothstep(0.5, 1.0, s);  // self-shadow in thick sand
+    float diff = max(dot(N, normalize(LDIR)), 0.0);
+    float grain = vnoise(uv * vec2(240.0, 360.0)) * 0.7 + vnoise(uv * vec2(520.0, 780.0)) * 0.3;
+    vec3 sand = vec3(0.81, 0.65, 0.39) * (0.48 + 0.52 * diff);
+    sand *= 0.80 + 0.32 * grain;
+    sand *= 1.0 - 0.22 * smoothstep(0.5, 1.0, sv);   // self-shadow in thick sand
+    float wet = smoothstep(0.10, 0.40, f.r);          // wet sand is dark and dense
+    sand = mix(sand, sand * vec3(0.42, 0.40, 0.38), wet);
     col = mix(col, sand, smask);
   }
+
+  // Caustics: dappled light dancing on whatever sits under deep water.
+  float wdepth = smoothstep(0.45, 0.95, f.r);
+  if (wdepth > 0.01) {
+    vec2 cuv = uv * vec2(30.0, 45.0) + vec2(uTime * 0.05, uTime * 0.04);
+    float c = vnoise(cuv) + vnoise(cuv * 1.9 + 5.2);
+    c = pow(max(1.05 - abs(c - 1.0) * 1.8, 0.0), 3.0);
+    col += vec3(0.035, 0.06, 0.08) * c * wdepth * vis;
+  }
+
+  col *= 0.50 + 0.50 * vis;   // soft shadows over everything
   return col;
+}
+
+// ACES filmic tonemap (Narkowicz approximation).
+vec3 aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
 void main() {
   vec2 uv = vUV;
-  float w = texture2D(uField, uv).r;
+  vec4 f0 = texture2D(uField, uv);
+  float w = f0.r;
   float wl = texture2D(uField, uv - vec2(uFieldPx.x * 2.0, 0.0)).r;
   float wr = texture2D(uField, uv + vec2(uFieldPx.x * 2.0, 0.0)).r;
   float wd = texture2D(uField, uv - vec2(0.0, uFieldPx.y * 2.0)).r;
   float wu = texture2D(uField, uv + vec2(0.0, uFieldPx.y * 2.0)).r;
-  vec3 N = normalize(vec3((wl - wr) * 3.0, (wd - wu) * 3.0, 1.0));
+  vec3 N = normalize(vec3((wl - wr) * 3.2, (wd - wu) * 3.2, 1.0));
   float mask = smoothstep(0.26, 0.46, w);
 
+  float vis = lightVisibility(uv);
+
   // Refraction: bend the scene behind the water along the surface normal.
-  vec2 refr = N.xy * 0.045 * mask;
-  vec3 scene = shadeScene(uv + refr);
+  vec2 refr = N.xy * 0.016 * mask;
+  vec3 scene = shadeScene(uv + refr, vis);
 
   vec3 col = scene;
   if (mask > 0.002) {
-    vec3 shallow = vec3(0.22, 0.58, 0.86);
-    vec3 deep = vec3(0.03, 0.18, 0.38);
-    vec3 tint = mix(shallow, deep, smoothstep(0.35, 1.0, w));
-    vec3 watered = scene * mix(vec3(1.0), vec3(0.55, 0.78, 1.0), mask) * 0.85 + tint * 0.50;
+    vec3 shallow = vec3(0.20, 0.55, 0.82);
+    vec3 deep = vec3(0.02, 0.15, 0.34);
+    vec3 tint = mix(shallow, deep, smoothstep(0.30, 0.70, w));
+    // The field saturates inside the body; gradients there are quantization
+    // noise, so deep water fades to a clean colour and surface effects only
+    // live near the interface.
+    float body = smoothstep(0.62, 0.88, w);
+    float surfaceness = 1.0 - body;
+    vec3 watered = scene * mix(vec3(1.0), vec3(0.55, 0.78, 1.0), mask) * 0.42 + tint * 0.62;
+    watered = mix(watered, deep * 1.18 + scene * 0.10, body);
 
-    vec3 L = normalize(vec3(-0.45, 0.65, 0.62));
+    vec3 L = normalize(LDIR);
     vec3 V = vec3(0.0, 0.0, 1.0);
     vec3 Hv = normalize(L + V);
-    float spec = pow(max(dot(N, Hv), 0.0), 90.0) * 0.9;
-    float fres = pow(1.0 - max(N.z, 0.0), 2.5) * 0.55;
-    float sparkle = vnoise(uv * 90.0 + vec2(uTime * 0.18, -uTime * 0.13));
-    spec *= 0.75 + 0.5 * sparkle;
+    float spec = pow(max(dot(N, Hv), 0.0), 110.0) * 1.3
+               + pow(max(dot(N, Hv), 0.0), 24.0) * 0.25;
+    float fres = pow(1.0 - max(N.z, 0.0), 2.2);
 
+    vec3 refl = skyColor(reflect(-V, N));   // environment reflection
     col = mix(scene, watered, mask);
-    col += (spec + fres * 0.35) * mask * vec3(0.9, 0.97, 1.0);
+    col += refl * fres * 0.50 * mask * surfaceness;
+    col += spec * vis * mask * surfaceness * vec3(1.0, 0.97, 0.90);
+
+    // Foam where the water churns (pours, impacts, splashes).
+    float foam = smoothstep(0.15, 0.55, f0.b) * mask;
+    float fnoise = vnoise(uv * 130.0 + uTime * vec2(0.35, -0.22));
+    col = mix(col, vec3(0.82, 0.90, 0.98), foam * (0.30 + 0.45 * fnoise) * (0.4 + 0.6 * surfaceness));
   }
 
-  // Gentle vignette and filmic-ish curve.
+  // Vignette, filmic tonemap, fine grain.
   vec2 vc = uv - 0.5;
-  col *= 1.0 - dot(vc, vc) * 0.55;
-  col = col / (col + 0.55) * 1.45;
+  col *= 1.0 - dot(vc, vc) * 0.50;
+  col = aces(col * 1.30);
+  col += (hash(uv * vec2(917.0, 533.0) + fract(uTime)) * 2.0 - 1.0) * 0.007;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -772,7 +850,7 @@ void main() {
   }
 
   // Particle buffer (x, y, type interleaved).
-  const particleData = new Float32Array(MAX_PARTICLES * 3);
+  const particleData = new Float32Array(MAX_PARTICLES * 4);
   const particleBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
   gl.bufferData(gl.ARRAY_BUFFER, particleData.byteLength, gl.DYNAMIC_DRAW);
@@ -784,6 +862,7 @@ void main() {
   const splatLoc = {
     aPos: gl.getAttribLocation(splatProg, "aPos"),
     aType: gl.getAttribLocation(splatProg, "aType"),
+    aAgit: gl.getAttribLocation(splatProg, "aAgit"),
     uPointSize: gl.getUniformLocation(splatProg, "uPointSize"),
   };
   const compLoc = {
@@ -821,22 +900,26 @@ void main() {
     gl.useProgram(splatProg);
     const n = engine.count;
     for (let i = 0; i < n; i++) {
-      particleData[i * 3] = engine.px[i];
-      particleData[i * 3 + 1] = engine.py[i];
-      particleData[i * 3 + 2] = engine.type[i];
+      particleData[i * 4] = engine.px[i];
+      particleData[i * 4 + 1] = engine.py[i];
+      particleData[i * 4 + 2] = engine.type[i];
+      particleData[i * 4 + 3] = engine.agit[i];
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, particleData.subarray(0, n * 3));
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, particleData.subarray(0, n * 4));
     gl.enableVertexAttribArray(splatLoc.aPos);
-    gl.vertexAttribPointer(splatLoc.aPos, 2, gl.FLOAT, false, 12, 0);
+    gl.vertexAttribPointer(splatLoc.aPos, 2, gl.FLOAT, false, 16, 0);
     gl.enableVertexAttribArray(splatLoc.aType);
-    gl.vertexAttribPointer(splatLoc.aType, 1, gl.FLOAT, false, 12, 8);
+    gl.vertexAttribPointer(splatLoc.aType, 1, gl.FLOAT, false, 16, 8);
+    gl.enableVertexAttribArray(splatLoc.aAgit);
+    gl.vertexAttribPointer(splatLoc.aAgit, 1, gl.FLOAT, false, 16, 12);
     gl.uniform1f(splatLoc.uPointSize, 5.2 * FIELD_SCALE);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     if (n > 0) gl.drawArrays(gl.POINTS, 0, n);
     gl.disable(gl.BLEND);
     gl.disableVertexAttribArray(splatLoc.aType);
+    gl.disableVertexAttribArray(splatLoc.aAgit);
 
     // Pass 2: composite to screen.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
