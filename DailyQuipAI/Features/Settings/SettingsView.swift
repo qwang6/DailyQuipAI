@@ -122,6 +122,29 @@ struct SettingsView: View {
                     Text("settings.section.language".localized)
                 }
 
+                // Lab Section
+                Section {
+                    NavigationLink(destination: PhysicsSandboxView()) {
+                        HStack {
+                            Image(systemName: "aqi.medium")
+                                .foregroundStyle(LinearGradient.brand)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                Text("sandbox.title".localized)
+                                    .font(.bodyMedium)
+                                    .foregroundColor(.textPrimary)
+
+                                Text("sandbox.subtitle".localized)
+                                    .font(.captionLarge)
+                                    .foregroundColor(.textSecondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("settings.section.lab".localized)
+                }
+
                 // About Section
                 Section {
                     HStack {

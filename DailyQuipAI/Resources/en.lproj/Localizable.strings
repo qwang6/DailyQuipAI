@@ -125,3 +125,16 @@
 "error.server.message" = "Something went wrong. Please try again later.";
 "error.unknown.title" = "Oops!";
 "error.unknown.message" = "An unexpected error occurred.";
+
+/* Physics Sandbox */
+"settings.section.lab" = "Lab";
+"sandbox.title" = "Physics Sandbox";
+"sandbox.subtitle" = "Falling sand & water cellular automaton";
+"sandbox.material" = "Material";
+"sandbox.material.sand" = "Sand";
+"sandbox.material.water" = "Water";
+"sandbox.material.wall" = "Wall";
+"sandbox.material.eraser" = "Eraser";
+"sandbox.pause" = "Pause";
+"sandbox.resume" = "Resume";
+"sandbox.clear" = "Clear";
